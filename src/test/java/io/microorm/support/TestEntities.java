@@ -401,6 +401,27 @@ public final class TestEntities {
         }
     }
 
+    /** Identifier without a getter, so it cannot be used to create a lazy proxy. */
+    @Entity(table = "no_name")
+    public static class NoName {
+
+        @Id
+        private Long id;
+
+        private String label;
+
+        public NoName() {
+        }
+
+        public Long id() {
+            return id;
+        }
+
+        public String getLabel() {
+            return label;
+        }
+    }
+
     /** Association target that is not an entity, so no foreign key can be generated for it. */
     public static class NotAnEntityTarget {
 
@@ -430,6 +451,35 @@ public final class TestEntities {
 
         public NotAnEntityTarget getUser() {
             return user;
+        }
+    }
+
+    /** Has an array column, which dirty checking has to compare by content. */
+    @Entity(table = "blobs")
+    public static class Blob {
+
+        @Id
+        private Long id;
+
+        private byte[] content;
+
+        public Blob() {
+        }
+
+        public Long getId() {
+            return id;
+        }
+
+        public void setId(Long id) {
+            this.id = id;
+        }
+
+        public byte[] getContent() {
+            return content;
+        }
+
+        public void setContent(byte[] content) {
+            this.content = content;
         }
     }
 
