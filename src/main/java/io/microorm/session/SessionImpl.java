@@ -2,12 +2,16 @@ package io.microorm.session;
 
 import io.microorm.exception.EntityNotFoundException;
 import io.microorm.exception.PersistenceException;
+import io.microorm.id.IdGenerator;
 import io.microorm.id.IdGenerators;
 import io.microorm.metadata.EntityMetadata;
+import io.microorm.query.Query;
 import io.microorm.sql.Dialect;
 import io.microorm.transaction.IsolationLevel;
 import io.microorm.transaction.Transaction;
 import io.microorm.transaction.TransactionManager;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -15,20 +19,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Default {@link Session} implementation.
+ * Default {@link Session} implementation: lifecycle only.
  *
- * <p>Deliberately thin: the interesting work lives in the collaborators it owns, which is how the
- * class stays readable and how each part can be tested on its own.
- *
- * <ul>
- *   <li>{@link PersistenceContext} - identity: one object per row per session;</li>
- *   <li>{@link UnitOfWork} - change detection: which columns actually changed;</li>
- *   <li>{@link RowLoader} - SELECT execution and row mapping;</li>
- *   <li>{@link StatementExecutor} - INSERT, UPDATE and DELETE, including optimistic locking;</li>
- *   <li>{@link TransactionManager} - connection ownership and transactions.</li>
- * </ul>
- *
- * <p>Not thread safe, by design: a session is a unit of work, not a container of shared state.
+ * <p>Identity lives in {@link PersistenceContext}, change detection in {@link UnitOfWork}, SELECT and
+ * row mapping in {@link RowLoader}, writes in {@link StatementExecutor} and the connection in
+ * {@link TransactionManager}. Not thread safe: a session is a unit of work, not shared state.
  */
 public final class SessionImpl implements Session {
 
@@ -111,18 +106,19 @@ public final class SessionImpl implements Session {
             persist(entity);
             return entity;
         }
-        Object target = context.get(metadata.type(), id)
-                .orElseGet(() -> Optional.ofNullable(rowLoader.find(metadata, id)).orElse(null));
-        if (target == null) {
+        Optional<Object> target = context.get(metadata.type(), id)
+                .or(() -> Optional.ofNullable(rowLoader.find(metadata, id)));
+        if (target.isEmpty()) {
             persist(entity);
             return entity;
         }
-        if (target != entity) {
-            RowLoader.copyState(metadata, entity, target);
+        Object managed = target.orElseThrow();
+        if (managed != entity) {
+            RowLoader.copyState(metadata, entity, managed);
         }
-        unitOfWork.cancelRemoval(target);
+        unitOfWork.cancelRemoval(managed);
         log.debug("merge({}#{})", metadata.describe(), id);
-        return target;
+        return managed;
     }
 
     @Override
@@ -134,7 +130,8 @@ public final class SessionImpl implements Session {
         if (id == null) {
             throw new PersistenceException("Cannot remove a transient " + metadata.describe());
         }
-        unitOfWork.scheduleRemoval(context.get(metadata.type(), id).orElse(entity));
+        Object managed = context.get(metadata.type(), id).orElse(entity);
+        unitOfWork.scheduleRemoval(managed);
         log.debug("remove({}#{})", metadata.describe(), id);
     }
 
@@ -165,8 +162,8 @@ public final class SessionImpl implements Session {
         try {
             changes.forEach(statementExecutor::execute);
         } catch (RuntimeException failure) {
-            // A failed statement leaves the transaction unusable, so the session makes sure the caller
-            // cannot keep going on top of half applied work.
+            // A failed statement leaves the transaction unusable, so the session stops the caller from
+            // continuing on top of half applied work.
             transactions.current().ifPresent(Transaction::markRollbackOnly);
             transactions.markConnectionBroken(String.valueOf(failure.getMessage()));
             throw failure;
@@ -195,9 +192,9 @@ public final class SessionImpl implements Session {
     @Override
     public void commit() {
         checkOpen();
-        transactions.requireActiveTransaction("commit");
+        Transaction transaction = transactions.requireActiveTransaction("commit");
         flush();
-        transactions.requireActiveTransaction("commit").commit();
+        transaction.commit();
     }
 
     @Override
@@ -217,9 +214,9 @@ public final class SessionImpl implements Session {
     }
 
     @Override
-    public <T> io.microorm.query.Query<T> createQuery(Class<T> type) {
+    public <T> Query<T> createQuery(Class<T> type) {
         checkOpen();
-        return new QueryImpl<>(this, type);
+        return new QueryImpl<>(this, type, factory.metadata());
     }
 
     @Override
@@ -239,43 +236,25 @@ public final class SessionImpl implements Session {
         log.debug("Session closed: {}", counters.snapshot());
     }
 
-    /** @return the persistence context of this session, used by tests and by the query builder */
-    PersistenceContext persistenceContext() {
-        return context;
-    }
-
-    /** @return the unit of work of this session, used by the query builder to flush first */
-    UnitOfWork unitOfWork() {
-        return unitOfWork;
-    }
-
-    /** @return the row loader of this session, so a query returns managed instances */
+    /** @return the row loader, so a query returns managed instances */
     RowLoader rowLoader() {
         return rowLoader;
     }
 
-    /** @return the metadata registry shared with the factory */
-    io.microorm.metadata.MetadataRegistry metadata() {
-        return factory.metadata();
-    }
-
-    /** @return the dialect used to render LIMIT and OFFSET */
+    /** @return the dialect that renders LIMIT and OFFSET */
     Dialect dialect() {
         return factory.sqlGenerator().dialect();
     }
 
     /** @return the JDBC connection of this session */
-    java.sql.Connection connection() {
+    Connection connection() {
         return transactions.connection();
     }
 
     /**
-     * Resolves database generated identifiers before the changes are built.
-     *
-     * <p>The order matters: once the identifier is known, the INSERT can bind it as an ordinary column
-     * instead of asking the database to return it, and the persistence context gets a key for the
-     * entity. Identifiers that the database assigns itself are left empty on purpose - the INSERT then
-     * carries a RETURNING clause.
+     * Resolves database generated identifiers before the changes are built, so that a sequence
+     * identifier can be bound as an ordinary column instead of being asked for again. Identifiers the
+     * database assigns itself stay empty on purpose - the INSERT then carries a RETURNING clause.
      */
     private void assignIdentifiers() {
         for (Object entity : unitOfWork.scheduledInserts()) {
@@ -284,9 +263,10 @@ public final class SessionImpl implements Session {
                 continue;
             }
             try {
-                idGenerators.forEntity(metadata).generate(transactions.connection(), metadata)
+                IdGenerator generator = idGenerators.forEntity(metadata);
+                generator.generate(transactions.connection(), metadata)
                         .ifPresent(id -> metadata.identifier().setValue(entity, id));
-            } catch (java.sql.SQLException e) {
+            } catch (SQLException e) {
                 throw new PersistenceException("Cannot generate an identifier for "
                         + metadata.describe(), e);
             }
@@ -294,10 +274,8 @@ public final class SessionImpl implements Session {
     }
 
     /**
-     * Flushes pending work when a transaction is running.
-     *
-     * <p>Reading inside a transaction must not observe values that were already changed in memory but
-     * not written yet; this is the behaviour Hibernate calls {@code FlushMode.AUTO}.
+     * Flushes pending work when a transaction is running, so that a read never observes values changed
+     * in memory but not written yet - Hibernate calls this {@code FlushMode.AUTO}.
      */
     void autoFlush() {
         if (transactions.hasActiveTransaction() && unitOfWork.hasPendingWork()) {
@@ -306,10 +284,10 @@ public final class SessionImpl implements Session {
     }
 
     private EntityMetadata metadataOf(Object entity) {
-        return factory.metadata().metadataFor(entity.getClass());
+        return metadataOf(entity.getClass());
     }
 
-    private EntityMetadata metadataOf(Class<?> type) {
+    EntityMetadata metadataOf(Class<?> type) {
         return factory.metadata().metadataFor(type);
     }
 

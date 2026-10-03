@@ -33,13 +33,12 @@ import org.slf4j.LoggerFactory;
  *   <li>retire connections that exceeded {@code idleTimeout} or {@code maxLifetime}.</li>
  * </ul>
  *
- * <p>Expiry is evaluated lazily on borrow and release rather than by a background sweeper thread:
- * a timer thread would need its own shutdown path, and a pool that is not being used has nothing to
- * sweep. The trade-off is that an idle pool keeps expired connections until the next borrow.
+ * <p>Expiry is evaluated lazily on borrow and release rather than by a background sweeper thread: a
+ * pool nobody uses has nothing to sweep. The trade-off is that an idle pool keeps expired connections
+ * until the next borrow.
  *
- * <p>Instances are thread safe. The {@link ReentrantLock} plus {@link Condition} pair is the
- * standard shape: the condition is signalled on release so a waiting thread wakes up immediately
- * instead of polling.
+ * <p>Instances are thread safe: the {@link Condition} is signalled on release, so a waiting thread
+ * wakes up immediately instead of polling.
  */
 public final class ConnectionPool implements AutoCloseable {
 
@@ -47,6 +46,7 @@ public final class ConnectionPool implements AutoCloseable {
 
     private final DataSource dataSource;
     private final PoolConfig config;
+    private final ConnectionHealth health;
     private final ReentrantLock lock = new ReentrantLock();
     private final Condition connectionAvailable = lock.newCondition();
     private final Deque<PhysicalConnection> idle = new ArrayDeque<>();
@@ -64,11 +64,11 @@ public final class ConnectionPool implements AutoCloseable {
      *
      * @param dataSource source of unpooled physical connections
      * @param config     pool configuration
-     * @throws PersistenceException when the initial connections cannot be established
      */
     public ConnectionPool(DataSource dataSource, PoolConfig config) {
         this.dataSource = dataSource;
         this.config = config;
+        this.health = new ConnectionHealth(config);
         for (int i = 0; i < config.minSize(); i++) {
             PhysicalConnection connection = openPhysical();
             idle.add(connection);
@@ -77,7 +77,7 @@ public final class ConnectionPool implements AutoCloseable {
     }
 
     /**
-     * Borrows a connection. The returned connection must be closed to be returned to the pool.
+     * Borrows a connection, which must be closed to go back to the pool.
      *
      * @return a pooled connection
      * @throws ConnectionPoolException when no connection becomes available within the timeout
@@ -131,7 +131,7 @@ public final class ConnectionPool implements AutoCloseable {
     /**
      * Marks a borrowed connection as broken so that releasing it disposes of the physical connection.
      *
-     * @param connection connection previously obtained from {@link #borrow()}
+     * @param connection connection obtained from {@link #borrow()}
      * @param reason     human readable cause, used for logging
      */
     public void invalidate(Connection connection, String reason) {
@@ -205,7 +205,7 @@ public final class ConnectionPool implements AutoCloseable {
     private PhysicalConnection pollUsableIdle() {
         PhysicalConnection candidate = idle.peekFirst();
         while (candidate != null) {
-            if (isExpired(candidate)) {
+            if (health.isExpired(candidate)) {
                 idle.pollFirst();
                 retire(candidate);
                 candidate = idle.peekFirst();
@@ -217,7 +217,7 @@ public final class ConnectionPool implements AutoCloseable {
         if (candidate == null) {
             return null;
         }
-        if (!config.validateOnBorrow() || isAlive(candidate)) {
+        if (!config.validateOnBorrow() || health.isAlive(candidate)) {
             return candidate;
         }
         // A connection that fails validation is never handed out; try the next idle one.
@@ -231,43 +231,9 @@ public final class ConnectionPool implements AutoCloseable {
     }
 
     private boolean isReusable(PooledConnection wrapper) {
-        if (wrapper.discarded() || isExpired(wrapper.physical())) {
-            return false;
-        }
-        try {
-            Connection connection = wrapper.connection();
-            if (connection.isClosed()) {
-                return false;
-            }
-            // A connection must be reusable only if the driver did not leave an open transaction
-            // behind; setAutoCommit(true) both restores the default and commits a leaked one.
-            connection.setAutoCommit(true);
-            return !config.validateOnReturn() || isAlive(wrapper.physical());
-        } catch (SQLException e) {
-            log.debug("Connection cannot be returned to the pool", e);
-            return false;
-        }
-    }
-
-    private boolean isExpired(PhysicalConnection physical) {
-        Instant now = Instant.now(config.clock());
-        return physical.createdAt().plus(config.maxLifetime()).isBefore(now)
-                || physical.lastUsedAt().plus(config.idleTimeout()).isBefore(now);
-    }
-
-    private boolean isAlive(PhysicalConnection physical) {
-        try {
-            Connection connection = physical.connection();
-            if (connection.isClosed()) {
-                return false;
-            }
-            try (Statement statement = connection.createStatement()) {
-                return statement.execute(config.validationQuery());
-            }
-        } catch (SQLException e) {
-            log.debug("Validation query failed, discarding connection", e);
-            return false;
-        }
+        return !wrapper.discarded()
+                && !health.isExpired(wrapper.physical())
+                && health.prepareForReuse(wrapper.physical());
     }
 
     private PhysicalConnection openPhysical() {
@@ -318,7 +284,7 @@ public final class ConnectionPool implements AutoCloseable {
     }
 
     /**
-     * Executes a statement on a pooled connection, used by the health check of {@link PooledDataSource}.
+     * Runs a statement on a pooled connection; used as the health check of an application.
      *
      * @param sql statement to run
      * @return whether the statement produced a result set

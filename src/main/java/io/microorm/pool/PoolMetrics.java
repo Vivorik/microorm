@@ -12,12 +12,9 @@ package io.microorm.pool;
  */
 public record PoolMetrics(int total, int active, int idle, int waiting, long created, long discarded) {
 
-    /**
-     * @param maxSize configured upper bound
-     * @return {@code true} when every connection is in use
-     */
-    public boolean saturated(int maxSize) {
-        return active >= maxSize;
+    /** @return {@code true} when every connection is in use */
+    public boolean saturated() {
+        return idle == 0 && total > 0;
     }
 
     @Override

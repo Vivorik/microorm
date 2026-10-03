@@ -37,16 +37,18 @@ final class QueryImpl<T> implements Query<T> {
     private final Class<T> type;
     private final EntityMetadata entity;
     private final WhereClause where;
+    private final io.microorm.metadata.MetadataRegistry registry;
 
     private final List<String> orderBy = new ArrayList<>();
     private Integer limit;
     private Integer offset;
 
-    QueryImpl(SessionImpl session, Class<T> type) {
+    QueryImpl(SessionImpl session, Class<T> type, io.microorm.metadata.MetadataRegistry registry) {
         this.session = session;
         this.type = type;
-        this.entity = session.metadata().metadataFor(type);
-        this.where = new WhereClause(entity, session.metadata());
+        this.registry = registry;
+        this.entity = registry.metadataFor(type);
+        this.where = new WhereClause(entity, registry);
     }
 
     @Override

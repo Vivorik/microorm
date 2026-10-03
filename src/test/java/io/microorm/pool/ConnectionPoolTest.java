@@ -376,6 +376,20 @@ class ConnectionPoolTest {
     }
 
     @Test
+    @DisplayName("metrics report saturation of the pool")
+    void reportsSaturation() throws Exception {
+        try (ConnectionPool pool = pool(config().minSize(0).maxSize(1).build())) {
+            assertThat(pool.metrics().saturated()).isFalse();
+
+            try (Connection connection = pool.borrow()) {
+                assertThat(pool.metrics().saturated()).isTrue();
+                assertThat(pool.metrics().toString()).contains("active=1");
+            }
+            assertThat(pool.metrics().saturated()).isFalse();
+        }
+    }
+
+    @Test
     @DisplayName("validate() borrows a connection and runs the health check")
     void exposesHealthCheck() throws Exception {
         try (ConnectionPool pool = pool(config().minSize(1).build())) {
