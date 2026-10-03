@@ -97,11 +97,19 @@ public final class TransactionManager implements AutoCloseable {
      *
      * @param operation operation that needs a transaction, used in the error message
      * @return the running transaction
-     * @throws TransactionRequiredException when no transaction is active
+     * @throws TransactionRequiredException when no transaction is active, or when the running one was
+     *                                     marked rollback-only
      */
     public Transaction requireActiveTransaction(String operation) {
-        return current().orElseThrow(() -> new TransactionRequiredException(
+        Transaction transaction = current().orElseThrow(() -> new TransactionRequiredException(
                 "Cannot " + operation + " without an active transaction; call beginTransaction() first"));
+        if (transaction.isRollbackOnly()) {
+            // A doomed transaction must not run further statements: doing so would let a caller build
+            // on top of work that is already lost.
+            throw new TransactionRequiredException("Cannot " + operation
+                    + ": the transaction is marked rollback-only, call rollback() instead");
+        }
+        return transaction;
     }
 
     /**

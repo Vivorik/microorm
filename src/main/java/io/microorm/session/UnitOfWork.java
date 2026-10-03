@@ -86,6 +86,15 @@ public final class UnitOfWork {
     }
 
     /**
+     * @return the entities scheduled for INSERT, in scheduling order
+     */
+    public List<Object> scheduledInserts() {
+        return managedInstances().stream()
+                .filter(entity -> statuses.getOrDefault(entity, EntityStatus.MANAGED) == EntityStatus.NEW)
+                .toList();
+    }
+
+    /**
      * @param entity instance to check
      * @return {@code true} when the entity is known to be new
      */

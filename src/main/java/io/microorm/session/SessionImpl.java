@@ -2,6 +2,7 @@ package io.microorm.session;
 
 import io.microorm.exception.EntityNotFoundException;
 import io.microorm.exception.PersistenceException;
+import io.microorm.id.IdGenerators;
 import io.microorm.metadata.EntityMetadata;
 import io.microorm.transaction.IsolationLevel;
 import io.microorm.transaction.Transaction;
@@ -38,6 +39,7 @@ public final class SessionImpl implements Session {
     private final UnitOfWork unitOfWork;
     private final RowLoader rowLoader;
     private final StatementExecutor statementExecutor;
+    private final IdGenerators idGenerators;
     private final SessionCounters counters = new SessionCounters();
 
     private boolean closed;
@@ -48,10 +50,11 @@ public final class SessionImpl implements Session {
         this.transactions = new TransactionManager(
                 factory.dataSource(), factory.isolationLevel(), factory.invalidator());
         this.unitOfWork = new UnitOfWork(context, factory.metadata());
+        this.idGenerators = factory.idGenerators();
         this.rowLoader = new RowLoader(factory.metadata(), factory.sqlGenerator(), context, unitOfWork,
                 factory.proxyFactory(), counters, transactions::connection, () -> !closed);
-        this.statementExecutor = new StatementExecutor(factory.sqlGenerator(), factory.idGenerators(),
-                context, unitOfWork, counters, transactions::connection);
+        this.statementExecutor = new StatementExecutor(factory.sqlGenerator(), context, unitOfWork,
+                counters, transactions::connection);
     }
 
     @Override
@@ -152,6 +155,7 @@ public final class SessionImpl implements Session {
     public void flush() {
         checkOpen();
         transactions.requireActiveTransaction("flush");
+        assignIdentifiers();
         List<Change> changes = unitOfWork.pendingChanges();
         if (changes.isEmpty()) {
             return;
@@ -236,6 +240,30 @@ public final class SessionImpl implements Session {
     /** @return the unit of work of this session, used by the query builder to flush first */
     UnitOfWork unitOfWork() {
         return unitOfWork;
+    }
+
+    /**
+     * Resolves database generated identifiers before the changes are built.
+     *
+     * <p>The order matters: once the identifier is known, the INSERT can bind it as an ordinary column
+     * instead of asking the database to return it, and the persistence context gets a key for the
+     * entity. Identifiers that the database assigns itself are left empty on purpose - the INSERT then
+     * carries a RETURNING clause.
+     */
+    private void assignIdentifiers() {
+        for (Object entity : unitOfWork.scheduledInserts()) {
+            EntityMetadata metadata = metadataOf(entity);
+            if (!metadata.hasGeneratedIdentifier() || metadata.identifier().getValue(entity) != null) {
+                continue;
+            }
+            try {
+                idGenerators.forEntity(metadata).generate(transactions.connection(), metadata)
+                        .ifPresent(id -> metadata.identifier().setValue(entity, id));
+            } catch (java.sql.SQLException e) {
+                throw new PersistenceException("Cannot generate an identifier for "
+                        + metadata.describe(), e);
+            }
+        }
     }
 
     /**

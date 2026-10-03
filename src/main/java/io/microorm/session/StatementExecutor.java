@@ -32,7 +32,6 @@ final class StatementExecutor {
     private static final Logger log = LoggerFactory.getLogger(StatementExecutor.class);
 
     private final SqlGenerator sqlGenerator;
-    private final io.microorm.id.IdGenerators idGenerators;
     private final PersistenceContext context;
     private final UnitOfWork unitOfWork;
     private final SessionCounters counters;
@@ -40,13 +39,11 @@ final class StatementExecutor {
 
     StatementExecutor(
             SqlGenerator sqlGenerator,
-            io.microorm.id.IdGenerators idGenerators,
             PersistenceContext context,
             UnitOfWork unitOfWork,
             SessionCounters counters,
             SqlConnectionProvider connections) {
         this.sqlGenerator = sqlGenerator;
-        this.idGenerators = idGenerators;
         this.context = context;
         this.unitOfWork = unitOfWork;
         this.counters = counters;
@@ -71,9 +68,6 @@ final class StatementExecutor {
     private void insert(Change.Insert change) {
         EntityMetadata metadata = change.entity();
         Object instance = change.instance();
-        if (metadata.hasGeneratedIdentifier() && metadata.identifier().getValue(instance) == null) {
-            assignIdentifier(metadata, instance);
-        }
         InsertStatement statement = sqlGenerator.insert(metadata, change.columns());
         try (PreparedStatement prepared = connections.connection().prepareStatement(statement.sql())) {
             ParameterBinder.bind(prepared, statement.parameters());
@@ -133,16 +127,6 @@ final class StatementExecutor {
             return prepared.executeUpdate();
         } catch (SQLException e) {
             throw new PersistenceException("Cannot " + description, e);
-        }
-    }
-
-    private void assignIdentifier(EntityMetadata metadata, Object instance) {
-        try {
-            Optional<Object> generated = idGenerators.forEntity(metadata).generate(connections.connection(),
-                    metadata);
-            generated.ifPresent(id -> metadata.identifier().setValue(instance, id));
-        } catch (SQLException e) {
-            throw new PersistenceException("Cannot generate an identifier for " + metadata.describe(), e);
         }
     }
 
