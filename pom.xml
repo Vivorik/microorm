@@ -33,6 +33,7 @@
         <assertj.version>3.26.3</assertj.version>
         <testcontainers.version>1.20.4</testcontainers.version>
         <jmh.version>1.37</jmh.version>
+        <postgresql.driver.version>42.7.4</postgresql.driver.version>
 
         <clean.plugin.version>3.4.0</clean.plugin.version>
         <compiler.plugin.version>3.13.0</compiler.plugin.version>
@@ -57,6 +58,13 @@
         </dependency>
 
         <!-- Test scope -->
+        <dependency>
+            <!-- The PostgreSQL driver is what makes the integration tests and the benchmarks possible. -->
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>${postgresql.driver.version}</version>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
