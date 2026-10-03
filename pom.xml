@@ -121,7 +121,9 @@
                             <!-- NOTE: JMH's annotation processor emits generated sources that we do not
                                  control, so warnings are reported but do not fail the test compilation. -->
                             <compilerArgs>
-                                <arg>-Xlint:all,-processing</arg>
+                                <!-- -processing: JMH's processor legitimately claims nothing for plain test classes.
+                                     -options: javac notes that annotation processing is on the classpath. -->
+                                <arg>-Xlint:all,-processing,-options</arg>
                             </compilerArgs>
                             <showWarnings>true</showWarnings>
                         </configuration>

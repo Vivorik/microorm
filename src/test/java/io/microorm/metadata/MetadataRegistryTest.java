@@ -41,7 +41,7 @@ class MetadataRegistryTest {
         EntityMetadata order = registry.metadataFor(TestEntities.Order.class);
 
         assertThat(registry.size()).isEqualTo(2);
-        assertThat(order.tableName()).isEqualTo("order");
+        assertThat(order.tableName()).isEqualTo("orders");
         assertThat(parser.parsedEntityCount()).isEqualTo(2);
     }
 

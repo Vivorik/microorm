@@ -6,6 +6,7 @@ import io.microorm.annotation.GeneratedValue;
 import io.microorm.annotation.Id;
 import io.microorm.annotation.ManyToOne;
 import io.microorm.annotation.OneToMany;
+import io.microorm.annotation.Table;
 import io.microorm.annotation.Version;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -25,7 +26,8 @@ public final class TestEntities {
     }
 
     /** Mirror of the {@code users} table. */
-    @Entity(table = "users")
+    @Entity(table = "ignored_by_table")
+    @Table(name = "users")
     public static class User {
 
         @Id
@@ -122,7 +124,7 @@ public final class TestEntities {
     }
 
     /** Mirror of the {@code orders} table, including a LAZY many-to-one association. */
-    @Entity
+    @Entity(table = "orders")
     public static class Order {
 
         @Id
@@ -396,6 +398,38 @@ public final class TestEntities {
 
         public Long getId() {
             return id;
+        }
+    }
+
+    /** Association target that is not an entity, so no foreign key can be generated for it. */
+    public static class NotAnEntityTarget {
+
+        private Long id;
+
+        public Long getId() {
+            return id;
+        }
+    }
+
+    @Entity(table = "orders_of_non_entity")
+    public static class OrderOfNonEntity {
+
+        @Id
+        @GeneratedValue
+        private Long id;
+
+        @ManyToOne
+        private NotAnEntityTarget user;
+
+        public OrderOfNonEntity() {
+        }
+
+        public Long getId() {
+            return id;
+        }
+
+        public NotAnEntityTarget getUser() {
+            return user;
         }
     }
 
