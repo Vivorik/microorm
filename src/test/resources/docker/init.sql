@@ -25,3 +25,11 @@ CREATE TABLE orders (
     version     INTEGER       NOT NULL DEFAULT 0
 );
 CREATE INDEX idx_orders_user_id ON orders (user_id);
+
+-- tickets: only exists to prove that AUTO resolves to a sequence when the schema has one.
+CREATE SEQUENCE tickets_id_seq;
+CREATE TABLE tickets (
+    id          BIGINT       PRIMARY KEY DEFAULT nextval('tickets_id_seq'),
+    description VARCHAR(255) NOT NULL,
+    version     INTEGER      NOT NULL DEFAULT 0
+);

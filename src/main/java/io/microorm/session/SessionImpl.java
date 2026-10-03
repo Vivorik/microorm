@@ -153,7 +153,7 @@ public final class SessionImpl implements Session {
     public void flush() {
         checkOpen();
         transactions.requireActiveTransaction("flush");
-        assignIdentifiers();
+        prepareInserts();
         List<Change> changes = unitOfWork.pendingChanges();
         if (changes.isEmpty()) {
             return;
@@ -200,7 +200,7 @@ public final class SessionImpl implements Session {
     @Override
     public void rollback() {
         checkOpen();
-        transactions.requireActiveTransaction("roll back").rollback();
+        transactions.rollback();
     }
 
     @Override
@@ -252,13 +252,20 @@ public final class SessionImpl implements Session {
     }
 
     /**
-     * Resolves database generated identifiers before the changes are built, so that a sequence
-     * identifier can be bound as an ordinary column instead of being asked for again. Identifiers the
-     * database assigns itself stay empty on purpose - the INSERT then carries a RETURNING clause.
+     * Prepares entities that are about to be inserted, before the changes are built.
+     *
+     * <p>Two things happen here, and both must happen before {@link UnitOfWork#pendingChanges()}: the
+     * identifier is resolved - so a sequence identifier can be bound as an ordinary column instead of
+     * being asked for again - and a nullable {@code @Version} field is initialised to zero, because
+     * writing {@code NULL} into a {@code NOT NULL DEFAULT 0} column would fail. Identifiers the
+     * database assigns itself stay empty on purpose: the INSERT then carries a RETURNING clause.
      */
-    private void assignIdentifiers() {
+    private void prepareInserts() {
         for (Object entity : unitOfWork.scheduledInserts()) {
             EntityMetadata metadata = metadataOf(entity);
+            metadata.version()
+                    .filter(field -> field.getValue(entity) == null)
+                    .ifPresent(field -> field.setValue(entity, FieldSnapshot.initialVersion(field.javaType())));
             if (!metadata.hasGeneratedIdentifier() || metadata.identifier().getValue(entity) != null) {
                 continue;
             }

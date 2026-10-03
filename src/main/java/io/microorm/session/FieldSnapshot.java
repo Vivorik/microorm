@@ -99,10 +99,22 @@ final class FieldSnapshot {
     static Object increment(Object version, Class<?> javaType) {
         // NOTE: an if/else instead of a ternary on purpose - a conditional expression over int and long
         // branches is promoted to long, which would box every version as a Long.
+        return addOne((Number) version, javaType);
+    }
+
+    /**
+     * @param javaType type of the version column
+     * @return the value a new row starts with: {@code 0}, boxed as the column type
+     */
+    static Object initialVersion(Class<?> javaType) {
+        return javaType == Integer.class ? Integer.valueOf(0) : Long.valueOf(0L);
+    }
+
+    private static Object addOne(Number value, Class<?> javaType) {
         if (javaType == Integer.class) {
-            return Integer.valueOf(((Integer) version) + 1);
+            return Integer.valueOf(value.intValue() + 1);
         }
-        return Long.valueOf(((Long) version) + 1L);
+        return Long.valueOf(value.longValue() + 1L);
     }
 
     private Object copyIfArray(Object value) {

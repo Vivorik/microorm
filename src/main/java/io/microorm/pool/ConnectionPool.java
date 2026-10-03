@@ -118,7 +118,7 @@ public final class ConnectionPool implements AutoCloseable {
             }
             active--;
             if (isReusable(wrapper)) {
-                idle.addLast(physical.touchedAt(Instant.now(config.clock())));
+                park(physical);
             } else {
                 retire(physical);
             }
@@ -172,6 +172,22 @@ public final class ConnectionPool implements AutoCloseable {
             lock.unlock();
         }
         log.info("Connection pool closed: {}", metrics());
+    }
+
+    /**
+     * Puts a connection back into the idle set, stamping the current time.
+     *
+     * <p>{@link PhysicalConnection} is an immutable record, so the refreshed instance replaces the old
+     * one <em>everywhere</em>: leaving a stale copy in {@code all} would make the membership check on the
+     * next release fail, because two instances are only equal while they carry the same timestamp.
+     *
+     * @param physical the connection being returned
+     */
+    private void park(PhysicalConnection physical) {
+        PhysicalConnection refreshed = physical.touchedAt(Instant.now(config.clock()));
+        all.remove(physical);
+        all.add(refreshed);
+        idle.addLast(refreshed);
     }
 
     private PhysicalConnection awaitAvailable() {

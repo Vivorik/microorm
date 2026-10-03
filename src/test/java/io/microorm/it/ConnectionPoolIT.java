@@ -9,7 +9,6 @@ import io.microorm.pool.ConnectionPool;
 import io.microorm.pool.PoolConfig;
 import io.microorm.session.Session;
 import io.microorm.session.SessionFactory;
-import io.microorm.support.DockerAvailability;
 import io.microorm.support.MutableClock;
 import io.microorm.support.PostgresFixture;
 import java.sql.SQLException;
@@ -27,7 +26,8 @@ class ConnectionPoolIT {
 
     @BeforeAll
     static void startDatabase() {
-        DockerAvailability.assumeDocker();
+        PostgresFixture.assumeDatabase();
+        PostgresFixture.initialiseSchema();
         factory = PostgresFixture.sessionFactory();
     }
 
@@ -75,9 +75,6 @@ class ConnectionPoolIT {
     @Test
     @DisplayName("two sessions never share the same physical connection")
     void doesNotShareConnections() throws SQLException {
-        ConnectionPool pool = PostgresFixture.poolOf(factory);
-        pool.close();
-
         try (ConnectionPool fresh = new ConnectionPool(PostgresFixture.rawDataSource(),
                 PoolConfig.builder().minSize(0).maxSize(2).build())) {
             SessionFactory local = SessionFactory.builder().pool(fresh).build();
@@ -150,15 +147,21 @@ class ConnectionPoolIT {
         try (ConnectionPool pool = new ConnectionPool(PostgresFixture.rawDataSource(),
                 PoolConfig.builder().minSize(1).maxSize(2).build())) {
             var borrowed = pool.borrow();
-            // Terminating the backend is what a network failure looks like to the driver.
-            PostgresFixture.execute(factory,
-                    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                            + "WHERE datname = current_database() AND pid <> pg_backend_pid()");
+            int backendPid;
+            try (var statement = borrowed.createStatement();
+                 var rows = statement.executeQuery("SELECT pg_backend_pid()")) {
+                rows.next();
+                backendPid = rows.getInt(1);
+            }
+            // Terminating exactly this backend is what a dropped network connection looks like to the
+            // driver: the socket stays open, the server is gone.
+            PostgresFixture.execute(factory, "SELECT pg_terminate_backend(" + backendPid + ")");
             borrowed.close();
 
             try (var replacement = pool.borrow()) {
                 assertThat(replacement.isValid(1)).isTrue();
             }
+            assertThat(pool.metrics().discarded()).isPositive();
         }
     }
 

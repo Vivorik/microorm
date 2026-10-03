@@ -154,7 +154,23 @@ class SessionImplTest {
         assertThat(order.getId()).isEqualTo(42L);
         assertThat(database.sql()).contains("SELECT nextval('orders_id_seq')");
         FakeJdbc.ExecutedStatement insert = database.statement("INSERT INTO orders").orElseThrow();
-        assertThat(insert.parameters()).containsExactly(42L, 3L, "book", new BigDecimal("10.00"), null);
+        // A nullable @Version field is initialised to zero instead of being written as NULL.
+        assertThat(insert.parameters()).containsExactly(42L, 3L, "book", new BigDecimal("10.00"), 0L);
+    }
+
+    @Test
+    @DisplayName("a nullable @Version starts at zero rather than being written as NULL")
+    void initialisesVersionOnInsert() {
+        database.withSequence("orders_id_seq").withSequenceValue("orders_id_seq", 7L);
+        database.onUpdate("INSERT INTO orders (id, user_id, description, amount, version) "
+                + "VALUES (?, ?, ?, ?, ?)", 1);
+
+        session.beginTransaction();
+        session.persist(new TestEntities.Order("book", new BigDecimal("10.00")));
+        session.commit();
+
+        assertThat(database.statement("INSERT INTO orders").orElseThrow().parameters())
+                .containsExactly(7L, null, "book", new BigDecimal("10.00"), 0L);
     }
 
     @Test

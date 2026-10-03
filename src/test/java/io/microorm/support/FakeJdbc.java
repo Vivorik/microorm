@@ -175,6 +175,14 @@ public final class FakeJdbc {
                 new Class<?>[]{DataSource.class}, new DataSourceHandler());
     }
 
+    /**
+     * @param sql a statement that has a registered result
+     * @return a result set positioned before the first row, for mapper level tests
+     */
+    public java.sql.ResultSet resultSetFor(String sql) {
+        return resultFor(sql).asResultSet();
+    }
+
     /** @return a connection bound to this database */
     public Connection connection() {
         return (Connection) Proxy.newProxyInstance(FakeJdbc.class.getClassLoader(),
@@ -450,7 +458,15 @@ public final class FakeJdbc {
                     return valueAt(indexOf(label));
                 }
                 if (name.equals("getObject") && args.length == 2) {
-                    return valueAt((Integer) args[0]);
+                    // The PostgreSQL driver refuses a conversion it cannot perform, and the ORM relies on
+                    // that behaviour being reported instead of silently producing a wrong value.
+                    Object value = valueAt((Integer) args[0]);
+                    Class<?> target = (Class<?>) args[1];
+                    if (value != null && !target.isInstance(value) && !isWidening(value, target)) {
+                        throw new SQLException("conversion to class " + target.getName()
+                                + " from " + value.getClass().getSimpleName() + " not supported");
+                    }
+                    return value;
                 }
                 return switch (name) {
                     case "isClosed" -> false;
@@ -462,6 +478,10 @@ public final class FakeJdbc {
             };
             return (ResultSet) Proxy.newProxyInstance(FakeJdbc.class.getClassLoader(),
                     new Class<?>[]{ResultSet.class}, handler);
+        }
+
+        private boolean isWidening(Object value, Class<?> target) {
+            return value instanceof Number number && Number.class.isAssignableFrom(target);
         }
 
         private int indexOf(String label) {

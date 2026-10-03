@@ -483,6 +483,70 @@ public final class TestEntities {
         }
     }
 
+    /** Numeric fields whose Java types are deliberately wider than the column types of the schema. */
+    @Entity(table = "numbers")
+    public static class Numbers {
+
+        @Id
+        private Long id;
+
+        private Long longValue;
+
+        private Integer intValue;
+
+        private Double doubleValue;
+
+        private Short shortValue;
+
+        public Numbers() {
+        }
+
+        public Long getLongValue() {
+            return longValue;
+        }
+
+        public Integer getIntValue() {
+            return intValue;
+        }
+
+        public Double getDoubleValue() {
+            return doubleValue;
+        }
+
+        public Short getShortValue() {
+            return shortValue;
+        }
+    }
+
+    /** Fixture for the value types the row mapper has to normalise. */
+    @Entity(table = "types")
+    public static class Types {
+
+        @Id
+        private Long id;
+
+        private String textValue;
+
+        private java.util.UUID uuidValue;
+
+        private java.time.LocalDateTime timestampValue;
+
+        public Types() {
+        }
+
+        public String getTextValue() {
+            return textValue;
+        }
+
+        public java.util.UUID getUuidValue() {
+            return uuidValue;
+        }
+
+        public java.time.LocalDateTime getTimestampValue() {
+            return timestampValue;
+        }
+    }
+
     /** camelCase field names without {@code @Column}, so the naming convention applies. */
     @Entity(table = "camel_case")
     public static class CamelCaseColumns {

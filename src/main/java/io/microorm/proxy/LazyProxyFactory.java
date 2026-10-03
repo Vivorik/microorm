@@ -6,7 +6,6 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Callable;
 import net.bytebuddy.ByteBuddy;
 import net.bytebuddy.description.modifier.Visibility;
 import net.bytebuddy.dynamic.loading.ClassLoadingStrategy;
@@ -15,7 +14,6 @@ import net.bytebuddy.implementation.MethodDelegation;
 import net.bytebuddy.implementation.bind.annotation.AllArguments;
 import net.bytebuddy.implementation.bind.annotation.FieldValue;
 import net.bytebuddy.implementation.bind.annotation.Origin;
-import net.bytebuddy.implementation.bind.annotation.SuperCall;
 import net.bytebuddy.implementation.bind.annotation.This;
 import net.bytebuddy.matcher.ElementMatchers;
 
@@ -23,9 +21,10 @@ import net.bytebuddy.matcher.ElementMatchers;
  * Creates lazy proxies for {@code @ManyToOne} associations and for {@code getReference()}.
  *
  * <p>ByteBuddy generates a subclass of the entity class at runtime. Every method except the
- * identifier accessor is intercepted: the first call loads the real instance and copies its state
- * into the proxy, after which the proxy behaves like the entity itself - so
- * {@code order.getUser().getName()} needs no cast and no special case in calling code.
+ * identifier accessor is intercepted: the first call loads the real instance, and every later call -
+ * reads and writes alike - is delegated to it. The proxy therefore never holds a copy of the state,
+ * which is what makes a write through a proxy end up on the managed instance and be flushed like any
+ * other change.
  *
  * <p>The alternative, {@code java.lang.reflect.Proxy}, only works for interfaces, and entities are
  * classes. {@code @SuperCall} is what lets the interceptor invoke the original implementation: it is
@@ -39,6 +38,7 @@ public final class LazyProxyFactory {
     private static final String STATE_FIELD = "$$microOrmState";
     private static final String INITIALIZED_FIELD = "$$microOrmInitialized";
     private static final String IDENTIFIER_FIELD = "$$microOrmId";
+    private static final String TARGET_FIELD = "$$microOrmTarget";
 
     private final ByteBuddy byteBuddy = new ByteBuddy();
 
@@ -92,6 +92,7 @@ public final class LazyProxyFactory {
                 .implement(EntityProxy.class)
                 .defineField(STATE_FIELD, ProxyState.class, Visibility.PRIVATE)
                 .defineField(INITIALIZED_FIELD, boolean.class, Visibility.PRIVATE)
+                .defineField(TARGET_FIELD, Object.class, Visibility.PRIVATE)
                 // NOTE: the identifier is answered from a field declared on the generated type.
                 // FieldAccessor resolves fields on the instrumented class only, and the entity's own
                 // field is usually private in a superclass, hence the dedicated field.
@@ -179,17 +180,18 @@ public final class LazyProxyFactory {
     }
 
     /**
-     * Per-proxy state: which entity, which identifier, how to load it and whether that happened.
+     * Per-proxy state: which entity, which identifier, how to load it, and the loaded instance.
      *
-     * <p>A class rather than a record because the initialized flag has to be mutable, and the
-     * interceptor updates it in place rather than replacing the state object the proxy holds.
+     * <p>A class rather than a record because the loaded target and the initialized flag have to be
+     * mutable, and the interceptor updates them in place rather than replacing the state object the
+     * proxy holds.
      */
     public static final class ProxyState {
 
         private final EntityMetadata entity;
         private final Object id;
         private final EntityLoader loader;
-        private volatile boolean initialized;
+        private volatile Object target;
 
         ProxyState(EntityMetadata entity, Object id, EntityLoader loader) {
             this.entity = entity;
@@ -212,9 +214,18 @@ public final class LazyProxyFactory {
             return loader;
         }
 
+        /** @return the loaded instance, {@code null} while the proxy is still uninitialized */
+        public Object target() {
+            return target;
+        }
+
         /** @return {@code true} once the real instance has been loaded */
         public boolean initialized() {
-            return initialized;
+            return target != null;
+        }
+
+        private void initialized(Object loaded) {
+            this.target = loaded;
         }
     }
 
@@ -225,53 +236,49 @@ public final class LazyProxyFactory {
         }
 
         /**
-         * Initializes the proxy if needed, then calls the original implementation.
+         * Loads the target on the first call and delegates to it afterwards.
          *
-         * @param proxy   the proxy instance
-         * @param method  invoked method, used to special-case the {@code Object} methods
-         * @param args    call arguments
-         * @param state   state of this proxy
-         * @param superCall invocation of the original implementation
-         * @return the result of the call
-         * @throws Exception whatever the loader or the original implementation throws
+         * @param proxy  the proxy instance
+         * @param method invoked method, used to special-case the {@code Object} methods
+         * @param args   call arguments
+         * @param state  state of this proxy
+         * @return the result of the delegated call
+         * @throws Exception whatever the loader or the target throws
          */
         @net.bytebuddy.implementation.bind.annotation.RuntimeType
         public static Object intercept(
                 @This Object proxy,
                 @Origin Method method,
                 @AllArguments Object[] args,
-                @FieldValue(STATE_FIELD) ProxyState state,
-                @SuperCall Callable<?> superCall) throws Exception {
+                @FieldValue(STATE_FIELD) ProxyState state) throws Exception {
 
             return switch (method.getName()) {
                 case "equals" -> proxy == args[0];
                 case "hashCode" -> System.identityHashCode(proxy);
-                case "toString" -> state.initialized() ? superCall.call() : describe(state);
-                default -> {
-                    initialize(proxy, state);
-                    yield superCall.call();
-                }
+                case "toString" -> state.initialized() ? state.target().toString() : describe(state);
+                default -> method.invoke(target(proxy, state), args);
             };
         }
 
-        private static Object initialize(Object proxy, ProxyState state) {
-            if (state.initialized()) {
-                return null;
+        /**
+         * @return the loaded instance, loading it on first use
+         */
+        private static Object target(Object proxy, ProxyState state) {
+            if (!state.initialized()) {
+                // NOTE: the loaded instance stays managed by the session, and the proxy delegates to it
+                // instead of copying its state. A copy would be a second source of truth: writes through
+                // the proxy would never reach the unit of work.
+                Object loaded = state.loader().load(state.id());
+                state.initialized(loaded);
+                markInitialized(proxy, loaded);
             }
-            // NOTE: the copy happens through reflection into the proxy's own fields, which is what
-            // turns the proxy into a fully usable object without replacing its class.
-            Object instance = state.loader().load(state.id());
-            for (FieldMetadata field : state.entity().fields()) {
-                field.setValue(proxy, field.getValue(instance));
-            }
-            state.initialized = true;
-            markInitialized(proxy);
-            return null;
+            return state.target();
         }
 
-        private static void markInitialized(Object proxy) {
+        private static void markInitialized(Object proxy, Object loaded) {
             try {
                 setField(proxy, INITIALIZED_FIELD, Boolean.TRUE);
+                setField(proxy, TARGET_FIELD, loaded);
             } catch (ReflectiveOperationException e) {
                 throw new IllegalStateException("Cannot mark a lazy proxy as initialized", e);
             }

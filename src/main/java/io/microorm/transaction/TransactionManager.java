@@ -90,6 +90,22 @@ public final class TransactionManager implements AutoCloseable {
     }
 
     /**
+     * Rolls back the running transaction, whether it is active or already marked rollback-only.
+     *
+     * <p>Rollback has to be allowed in both cases: it is exactly what a caller does after a failure, and
+     * refusing it would leave the doomed transaction running.
+     *
+     * @return the transaction that was rolled back
+     * @throws TransactionRequiredException when there is no running transaction
+     */
+    public Transaction rollback() {
+        Transaction transaction = current().orElseThrow(() -> new TransactionRequiredException(
+                "Cannot roll back without an active transaction; call beginTransaction() first"));
+        transaction.rollback();
+        return transaction;
+    }
+
+    /**
      * Fails unless a transaction is running.
      *
      * <p>MicroORM does not silently fall back to auto-commit for writes: a half-written aggregate is

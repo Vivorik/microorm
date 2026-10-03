@@ -7,7 +7,6 @@ import io.microorm.example.Ticket;
 import io.microorm.example.User;
 import io.microorm.session.Session;
 import io.microorm.session.SessionFactory;
-import io.microorm.support.DockerAvailability;
 import io.microorm.support.PostgresFixture;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -28,7 +27,8 @@ class IdGenerationIT {
 
     @BeforeAll
     static void startDatabase() {
-        DockerAvailability.assumeDocker();
+        PostgresFixture.assumeDatabase();
+        PostgresFixture.initialiseSchema();
         factory = PostgresFixture.sessionFactory();
     }
 

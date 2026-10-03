@@ -7,7 +7,6 @@ import io.microorm.example.User;
 import io.microorm.exception.TransactionRequiredException;
 import io.microorm.session.Session;
 import io.microorm.session.SessionFactory;
-import io.microorm.support.DockerAvailability;
 import io.microorm.support.PostgresFixture;
 import io.microorm.transaction.IsolationLevel;
 import org.junit.jupiter.api.AfterAll;
@@ -23,7 +22,8 @@ class TransactionIT {
 
     @BeforeAll
     static void startDatabase() {
-        DockerAvailability.assumeDocker();
+        PostgresFixture.assumeDatabase();
+        PostgresFixture.initialiseSchema();
         factory = PostgresFixture.sessionFactory();
     }
 

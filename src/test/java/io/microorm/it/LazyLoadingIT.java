@@ -9,7 +9,6 @@ import io.microorm.exception.LazyInitializationException;
 import io.microorm.proxy.EntityProxy;
 import io.microorm.session.Session;
 import io.microorm.session.SessionFactory;
-import io.microorm.support.DockerAvailability;
 import io.microorm.support.PostgresFixture;
 import java.math.BigDecimal;
 import java.util.List;
@@ -32,7 +31,8 @@ class LazyLoadingIT {
 
     @BeforeAll
     static void startDatabase() {
-        DockerAvailability.assumeDocker();
+        PostgresFixture.assumeDatabase();
+        PostgresFixture.initialiseSchema();
         factory = PostgresFixture.sessionFactory();
     }
 

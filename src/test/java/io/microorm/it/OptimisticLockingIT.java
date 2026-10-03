@@ -7,7 +7,6 @@ import io.microorm.example.User;
 import io.microorm.exception.OptimisticLockException;
 import io.microorm.session.Session;
 import io.microorm.session.SessionFactory;
-import io.microorm.support.DockerAvailability;
 import io.microorm.support.PostgresFixture;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
@@ -34,7 +33,8 @@ class OptimisticLockingIT {
 
     @BeforeAll
     static void startDatabase() {
-        DockerAvailability.assumeDocker();
+        PostgresFixture.assumeDatabase();
+        PostgresFixture.initialiseSchema();
         factory = PostgresFixture.sessionFactory();
     }
 
@@ -92,13 +92,16 @@ class OptimisticLockingIT {
         CountDownLatch bothRead = new CountDownLatch(2);
         CountDownLatch mayWrite = new CountDownLatch(1);
 
-        Callable<Boolean> write = (Callable<Boolean>) () -> {
-            bothRead.countDown();
-            bothRead.await(5, TimeUnit.SECONDS);
-            mayWrite.await(5, TimeUnit.SECONDS);
+        Callable<Boolean> write = () -> {
             try (Session session = factory.openSession()) {
+                // Read first, then wait: if a thread read after the other one committed, there would be
+                // no conflict at all and the test would prove nothing.
                 User user = session.findOrThrow(User.class, id);
                 user.setName("Thread " + Thread.currentThread().getName());
+                bothRead.countDown();
+                bothRead.await(10, TimeUnit.SECONDS);
+                mayWrite.await(10, TimeUnit.SECONDS);
+
                 session.beginTransaction();
                 session.commit();
                 return true;
@@ -118,7 +121,7 @@ class OptimisticLockingIT {
             int winners = (Boolean.TRUE.equals(first.get(20, TimeUnit.SECONDS)) ? 1 : 0)
                     + (Boolean.TRUE.equals(second.get(20, TimeUnit.SECONDS)) ? 1 : 0);
 
-            assertThat(winners).isEqualTo(1);
+            assertThat(winners).as("exactly one thread may win").isEqualTo(1);
         } finally {
             executor.shutdownNow();
         }

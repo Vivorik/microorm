@@ -109,6 +109,25 @@ class ConnectionPoolTest {
     }
 
     @Test
+    @DisplayName("a connection can be reused after the clock moved between borrow and release")
+    void reusesConnectionAfterTheClockMoved() throws Exception {
+        // Regression: returning a connection used to put a refreshed copy into the idle set while the
+        // bookkeeping set kept the original, so the second release no longer recognised its connection.
+        try (ConnectionPool pool = pool(config().minSize(1).maxSize(1).build())) {
+            pool.borrow().close();
+            clock.advance(Duration.ofSeconds(1));
+
+            Connection reused = pool.borrow();
+            reused.close();
+
+            assertThat(pool.metrics().active()).isZero();
+            assertThat(pool.metrics().idle()).isEqualTo(1);
+            assertThat(pool.metrics().total()).isEqualTo(1);
+            assertThat(pool.metrics().discarded()).isZero();
+        }
+    }
+
+    @Test
     @DisplayName("a connection that fails the health check is replaced by a fresh one")
     void discardsBrokenConnection() throws Exception {
         try (ConnectionPool pool = pool(config().minSize(1).maxSize(2).build())) {

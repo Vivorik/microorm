@@ -7,7 +7,6 @@ import io.microorm.example.User;
 import io.microorm.metadata.EntityMetadata;
 import io.microorm.schema.SchemaExporter;
 import io.microorm.session.SessionFactory;
-import io.microorm.support.DockerAvailability;
 import io.microorm.support.PostgresFixture;
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -30,7 +29,8 @@ class SchemaExporterIT {
 
     @BeforeAll
     static void startDatabase() {
-        DockerAvailability.assumeDocker();
+        PostgresFixture.assumeDatabase();
+        PostgresFixture.initialiseSchema();
         factory = SessionFactory.builder()
                 .dataSource(PostgresFixture.rawDataSource())
                 .entities(User.class, Order.class)
@@ -59,7 +59,8 @@ class SchemaExporterIT {
              Statement statement = connection.createStatement()) {
             assertThat(tableExists(statement, "users")).isTrue();
             assertThat(tableExists(statement, "orders")).isTrue();
-            assertThat(tableExists(statement, "orders_id_seq")).isTrue();
+            // A sequence is not a table, so information_schema.tables will not report it.
+            assertThat(sequenceExists(statement, "orders_id_seq")).isTrue();
 
             try (ResultSet columns = connection.getMetaData().getColumns(null, SCHEMA, "users", null)) {
                 List<String> names = new java.util.ArrayList<>();
@@ -99,6 +100,9 @@ class SchemaExporterIT {
     void generatedSequenceWorks() throws SQLException {
         try (Connection connection = connectionInGeneratedSchema();
              Statement statement = connection.createStatement()) {
+            // Self-contained: the test must not depend on another test having inserted a user.
+            statement.executeUpdate("INSERT INTO users (email, name, active) "
+                    + "VALUES ('seq@example.com', 'Seq', true)");
             statement.executeUpdate(
                     "INSERT INTO orders (user_id, description, amount) SELECT id, 'book', 10.00 FROM users");
 
@@ -110,22 +114,34 @@ class SchemaExporterIT {
     }
 
     private void applyInOwnSchema(String script) throws SQLException {
+        // Split on the statement terminator: a CREATE TABLE spans several lines.
         try (Connection connection = connectionInGeneratedSchema();
              Statement statement = connection.createStatement()) {
             for (String command : script.lines()
                     .filter(line -> !line.isBlank() && !line.startsWith("--"))
-                    .toList()) {
-                statement.execute(command);
+                    .collect(java.util.stream.Collectors.joining("\n"))
+                    .split(";")) {
+                if (!command.isBlank()) {
+                    statement.execute(command);
+                }
             }
         }
     }
 
     private Connection connectionInGeneratedSchema() throws SQLException {
         org.postgresql.ds.PGSimpleDataSource dataSource = new org.postgresql.ds.PGSimpleDataSource();
-        dataSource.setUrl(PostgresFixture.jdbcUrl() + "&currentSchema=" + SCHEMA);
-        dataSource.setUser(PostgresFixture.container().getUsername());
-        dataSource.setPassword(PostgresFixture.container().getPassword());
+        dataSource.setUrl(PostgresFixture.jdbcUrlWithSchema(SCHEMA));
+        dataSource.setUser(PostgresFixture.user());
+        dataSource.setPassword(PostgresFixture.password());
         return dataSource.getConnection();
+    }
+
+    private boolean sequenceExists(Statement statement, String name) throws SQLException {
+        try (ResultSet sequences = statement.executeQuery(
+                "SELECT sequence_name FROM information_schema.sequences "
+                        + "WHERE sequence_schema = '" + SCHEMA + "' AND sequence_name = '" + name + "'")) {
+            return sequences.next();
+        }
     }
 
     private boolean tableExists(Statement statement, String name) throws SQLException {

@@ -10,7 +10,6 @@ import io.microorm.query.Query;
 import io.microorm.query.SortDirection;
 import io.microorm.session.Session;
 import io.microorm.session.SessionFactory;
-import io.microorm.support.DockerAvailability;
 import io.microorm.support.PostgresFixture;
 import java.util.List;
 import org.junit.jupiter.api.AfterAll;
@@ -26,7 +25,8 @@ class QueryIT {
 
     @BeforeAll
     static void startDatabase() {
-        DockerAvailability.assumeDocker();
+        PostgresFixture.assumeDatabase();
+        PostgresFixture.initialiseSchema();
         factory = PostgresFixture.sessionFactory();
     }
 
@@ -161,7 +161,7 @@ class QueryIT {
             session.persist(new User(hostile, "Bobby Tables", 30, true));
             session.commit();
 
-            List<User> found = session.createQuery(User.class).where("name", "=", hostile).list();
+            List<User> found = session.createQuery(User.class).where("email", "=", hostile).list();
 
             assertThat(found).hasSize(1);
             assertThat(found.get(0).getEmail()).isEqualTo(hostile);
