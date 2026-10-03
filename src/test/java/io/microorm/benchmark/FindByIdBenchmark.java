@@ -5,7 +5,6 @@ import io.microorm.pool.ConnectionPool;
 import io.microorm.pool.PoolConfig;
 import io.microorm.session.Session;
 import io.microorm.session.SessionFactory;
-import io.microorm.support.DockerAvailability;
 import io.microorm.support.PostgresFixture;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -30,10 +29,10 @@ import org.openjdk.jmh.infra.Blackhole;
 /**
  * Compares {@code find} by identifier in MicroORM with the same query written in plain JDBC.
  *
- * <p>Both sides run against the same PostgreSQL, over the same pooled connection, with the same SQL
- * projection. The difference the benchmark measures is therefore the ORM overhead itself: metadata
- * lookup, persistence context bookkeeping, reflection-based row mapping and the snapshot for dirty
- * checking.
+ * <p>Both sides run against the same PostgreSQL, over the same pool, with the same SQL projection, and
+ * both open and close a unit of work per operation. The difference the benchmark measures is therefore
+ * the ORM overhead itself: session bookkeeping, metadata lookup, the persistence context,
+ * reflection-based row mapping and the snapshot for dirty checking.
  *
  * <p>Run it with:
  * <pre>{@code
@@ -42,8 +41,8 @@ import org.openjdk.jmh.infra.Blackhole;
  *     -Dexec.args="io.microorm.benchmark.FindByIdBenchmark -bm avgt -wi 3 -i 5 -f 1"
  * }</pre>
  *
- * <p>The results are recorded in the README. Re-running them requires a Docker daemon, because the
- * fixture starts PostgreSQL in a container.
+ * <p>The results are recorded in the README. The database is a Testcontainers PostgreSQL by default;
+ * pass {@code -Dmicroorm.jdbcUrl=...} to measure against an already running server instead.
  */
 @State(Scope.Benchmark)
 @BenchmarkMode(Mode.AverageTime)
@@ -68,7 +67,8 @@ public class FindByIdBenchmark {
      */
     @Setup(Level.Trial)
     public void setUp() throws SQLException {
-        DockerAvailability.assumeDocker();
+        PostgresFixture.assumeDatabase();
+        PostgresFixture.initialiseSchema();
         PostgresFixture.truncate(PostgresFixture.sessionFactory());
 
         pool = new ConnectionPool(PostgresFixture.rawDataSource(),
@@ -108,14 +108,16 @@ public class FindByIdBenchmark {
     }
 
     /**
-     * MicroORM with a hot session: the session and its connection are reused, which isolates the cost of
-     * the identity map and of row mapping.
+     * MicroORM reading the same row twice: one SELECT plus one first level cache hit.
+     *
+     * <p>A session is opened per operation here too, exactly like in {@link #microOrmFindById}, so the
+     * difference between the two numbers is the cost of the second, cached lookup.
      *
      * @param blackhole sink
      * @return the loaded name
      */
     @Benchmark
-    public String microOrmFindByIdInWarmSession(Blackhole blackhole) {
+    public String microOrmFindByIdTwice(Blackhole blackhole) {
         try (Session session = factory.openSession()) {
             User first = session.findOrThrow(User.class, userId);
             // The second call is answered from the first level cache and performs no SQL at all.
