@@ -10,7 +10,7 @@
 `java.sql`, стандартная библиотека, SLF4J и ByteBuddy для ленивых прокси.
 
 ```
-Java 21 · Maven · PostgreSQL · 81 файл / ~6350 строк main · 282 юнит-теста + 8 IT-наборов
+Java 21 · Maven · PostgreSQL · 81 файл / ~6350 строк main · 283 юнит-теста + 8 IT-наборов
 ```
 
 ---
@@ -36,7 +36,9 @@ MicroORM решает ровно эту задачу в обратную сто�
 
 ## Quick start
 
-Полный пример из `src/test/java/io/microorm/it/CrudIT.java`, сокращённый до существенного:
+Пример ниже выполняется тестом [`ReadmeExampleTest`](src/test/java/io/microorm/session/ReadmeExampleTest.java),
+а те же сценарии против настоящего PostgreSQL проверяет
+[`CrudIT`](src/test/java/io/microorm/it/CrudIT.java) — README не может разъехаться с кодом.
 
 ```java
 PGSimpleDataSource dataSource = new PGSimpleDataSource();          // 1. обычный JDBC DataSource
@@ -358,7 +360,7 @@ mvn clean verify
 `verify` выполняет:
 
 1. **юнит-тесты** — SQL-генератор, парсинг метаданных, dirty checking, пул соединений, транзакции,
-   query builder, ленивые прокси (282 теста, без базы);
+   query builder, ленивые прокси, пример из README (283 теста, без базы);
 2. **интеграционные тесты** — Testcontainers поднимает `postgres:16-alpine`, применяет
    `src/test/resources/docker/init.sql`, после чего выполняются 8 наборов (`*IT`);
 3. **jacoco** — сбор покрытия и проверка порога 80% по строкам.
