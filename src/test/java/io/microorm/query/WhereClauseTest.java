@@ -7,15 +7,16 @@ import io.microorm.exception.MappingException;
 import io.microorm.metadata.EntityMetadata;
 import io.microorm.metadata.MetadataRegistry;
 import io.microorm.sql.Bind;
-import io.microorm.support.TestEntities;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import io.microorm.example.User;
+import io.microorm.example.Order;
 
 class WhereClauseTest {
 
     private final MetadataRegistry registry = new MetadataRegistry();
-    private final EntityMetadata user = registry.metadataFor(TestEntities.User.class);
+    private final EntityMetadata user = registry.metadataFor(User.class);
     private final WhereClause clause = new WhereClause(user, registry);
 
     @Test
@@ -72,7 +73,7 @@ class WhereClauseTest {
     @Test
     @DisplayName("foreign key columns can be compared as well")
     void validatesForeignKeyColumn() {
-        EntityMetadata order = registry.metadataFor(TestEntities.Order.class);
+        EntityMetadata order = registry.metadataFor(Order.class);
         WhereClause orderClause = new WhereClause(order, registry);
 
         orderClause.addIn(LogicalOperator.AND, "user_id", List.of(1L, 2L));
@@ -110,7 +111,7 @@ class WhereClauseTest {
     @Test
     @DisplayName("a number is widened to the column type")
     void widensNumbers() {
-        EntityMetadata order = registry.metadataFor(TestEntities.Order.class);
+        EntityMetadata order = registry.metadataFor(Order.class);
         WhereClause orderClause = new WhereClause(order, registry);
 
         orderClause.addIn(LogicalOperator.AND, "user_id", List.of(1, 2));

@@ -3,7 +3,6 @@ package io.microorm.metadata;
 import io.microorm.exception.MappingException;
 import java.lang.reflect.Constructor;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -121,9 +120,5 @@ public record EntityMetadata(
 
     private static boolean isDatabaseGenerated(FieldMetadata field) {
         return field.identifier() && field.generation().isPresent();
-    }
-
-    static String unqualifiedName(Class<?> type) {
-        return type.getSimpleName().toLowerCase(Locale.ROOT);
     }
 }

@@ -4,53 +4,54 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    # Once a week: the benchmark job below is slow and its result is informational.
+    - cron: '43 5 * * 1'
 
 jobs:
   verify:
-    # Integration tests run Testcontainers, which needs a working Docker daemon.
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           java-version: '21'
           distribution: temurin
           cache: maven
 
-      - name: Verify (unit tests, integration tests, coverage gate)
+      # Integration tests run Testcontainers, which needs a working Docker daemon.
+      - name: Verify
         run: mvn --batch-mode clean verify
 
-      - name: Upload coverage report
+      - uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v4
         with:
           name: jacoco-report
           path: target/site/jacoco/
           retention-days: 7
 
-  benchmarks:
-    # Nightly: benchmarks are slow and the numbers are informational.
+  benchmark:
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || github.event_name == 'push'
     timeout-minutes: 30
+    if: github.event_name == 'schedule'
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           java-version: '21'
           distribution: temurin
           cache: maven
 
-      - name: Run the find-by-id benchmark
+      - name: Benchmark find-by-id
+        # JMH forks a JVM and needs a real classpath, so exec:java is not enough here.
         run: |
-          mvn --batch-mode -q test-compile exec:java \
-            -Dexec.classpathScope=test \
-            -Dexec.mainClass=org.openjdk.jmh.Main \
-            -Dexec.args="io.microorm.benchmark.FindByIdBenchmark -bm avgt -wi 3 -i 5 -f 1 -r 1s"
+          mvn --batch-mode -q test-compile dependency:build-classpath \
+            -Dmdep.outputFile=target/cp.txt -Dmdep.includeScope=test
+          java -cp "target/classes:target/test-classes:$(cat target/cp.txt)" \
+            org.openjdk.jmh.Main io.microorm.benchmark.FindByIdBenchmark \
+            -bm avgt -wi 5 -i 5 -w 2s -r 3s -f 2 -tu us

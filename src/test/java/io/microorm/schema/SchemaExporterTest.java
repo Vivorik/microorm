@@ -13,6 +13,8 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import io.microorm.example.User;
+import io.microorm.example.Order;
 
 class SchemaExporterTest {
 
@@ -20,11 +22,11 @@ class SchemaExporterTest {
     private final SchemaExporter exporter = new SchemaExporter(registry);
 
     private EntityMetadata user() {
-        return registry.metadataFor(TestEntities.User.class);
+        return registry.metadataFor(User.class);
     }
 
     private EntityMetadata order() {
-        return registry.metadataFor(TestEntities.Order.class);
+        return registry.metadataFor(Order.class);
     }
 
     @Test
@@ -112,7 +114,7 @@ class SchemaExporterTest {
     @Test
     @DisplayName("scriptFor resolves entity classes through the registry")
     void exportsByClass() {
-        assertThat(exporter.scriptFor(registry, TestEntities.User.class)).contains("CREATE TABLE users (");
+        assertThat(exporter.scriptFor(registry, User.class)).contains("CREATE TABLE users (");
     }
 
     @Test

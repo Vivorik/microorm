@@ -12,6 +12,8 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import io.microorm.example.User;
+import io.microorm.example.Order;
 
 /**
  * Dirty checking is verified here without a database: the unit of work only decides <em>which</em>
@@ -23,22 +25,22 @@ class UnitOfWorkTest {
     private final PersistenceContext context = new PersistenceContext();
     private final UnitOfWork unitOfWork = new UnitOfWork(context, registry);
 
-    private TestEntities.User ann;
+    private User ann;
 
     @BeforeEach
     void setUp() {
-        ann = managed(new TestEntities.User("ann@example.com", "Ann", 30, true));
+        ann = managed(new User("ann@example.com", "Ann", 30, true));
     }
 
     /** Loads an entity the way the session would: snapshot taken at load time. */
-    private TestEntities.User managed(TestEntities.User user) {
+    private User managed(User user) {
         user.setId(1L);
-        context.put(TestEntities.User.class, 1L, user);
+        context.put(User.class, 1L, user);
         unitOfWork.register(user);
         return user;
     }
 
-    private Optional<Change.Update> updateFor(TestEntities.User user) {
+    private Optional<Change.Update> updateFor(User user) {
         return unitOfWork.pendingChanges().stream()
                 .filter(Change.Update.class::isInstance)
                 .map(Change.Update.class::cast)
@@ -157,7 +159,7 @@ class UnitOfWorkTest {
     @Test
     @DisplayName("a new entity is inserted with the insertable columns and without a generated id")
     void buildsInsert() {
-        TestEntities.User fresh = new TestEntities.User("c@example.com", "Cid", 20, false);
+        User fresh = new User("c@example.com", "Cid", 20, false);
         unitOfWork.scheduleInsert(fresh);
 
         Change.Insert insert = unitOfWork.pendingChanges().stream()
@@ -175,7 +177,7 @@ class UnitOfWorkTest {
     @Test
     @DisplayName("an assigned identifier is included in the INSERT columns")
     void includesAssignedIdInInsert() {
-        TestEntities.Order order = new TestEntities.Order("book", new BigDecimal("10.00"));
+        Order order = new Order("book", new BigDecimal("10.00"));
         order.setId(42L);
         unitOfWork.scheduleInsert(order);
 
@@ -193,7 +195,7 @@ class UnitOfWorkTest {
     @Test
     @DisplayName("an association is written as the identifier of the referenced entity")
     void writesForeignKey() {
-        TestEntities.Order order = new TestEntities.Order("book", new BigDecimal("10.00"));
+        Order order = new Order("book", new BigDecimal("10.00"));
         order.setUser(ann);
         unitOfWork.scheduleInsert(order);
 
@@ -214,7 +216,7 @@ class UnitOfWorkTest {
     @Test
     @DisplayName("a null association is written as a null foreign key of the referenced type")
     void writesNullForeignKey() {
-        TestEntities.Order order = new TestEntities.Order("book", new BigDecimal("10.00"));
+        Order order = new Order("book", new BigDecimal("10.00"));
         order.setUser(null);
         unitOfWork.scheduleInsert(order);
 
@@ -261,13 +263,13 @@ class UnitOfWorkTest {
     @Test
     @DisplayName("changes are ordered deletes, updates, inserts")
     void ordersChanges() {
-        TestEntities.Order order = new TestEntities.Order("book", new BigDecimal("10.00"));
+        Order order = new Order("book", new BigDecimal("10.00"));
         order.setId(5L);
-        context.put(TestEntities.Order.class, 5L, order);
+        context.put(Order.class, 5L, order);
         unitOfWork.register(order);
 
         ann.setName("Anna");
-        unitOfWork.scheduleInsert(new TestEntities.User("d@example.com", "Dee", 22, true));
+        unitOfWork.scheduleInsert(new User("d@example.com", "Dee", 22, true));
         unitOfWork.scheduleRemoval(order);
 
         assertThat(unitOfWork.pendingChanges()).extracting(change -> change.getClass().getSimpleName())
@@ -315,7 +317,7 @@ class UnitOfWorkTest {
     @Test
     @DisplayName("metadata of the tracked entity is resolved from its class")
     void resolvesMetadata() {
-        EntityMetadata metadata = registry.metadataFor(TestEntities.User.class);
+        EntityMetadata metadata = registry.metadataFor(User.class);
 
         assertThat(metadata.tableName()).isEqualTo("users");
         assertThat(unitOfWork.trackedEntities()).isEqualTo(1);

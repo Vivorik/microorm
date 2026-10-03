@@ -6,11 +6,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.microorm.metadata.EntityMetadata;
 import io.microorm.metadata.FieldMetadata;
 import io.microorm.metadata.MetadataRegistry;
-import io.microorm.support.TestEntities;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import io.microorm.example.User;
+import io.microorm.example.Order;
 
 class SqlGeneratorTest {
 
@@ -18,11 +19,11 @@ class SqlGeneratorTest {
     private final SqlGenerator generator = new SqlGenerator(new PostgresDialect());
 
     private EntityMetadata user() {
-        return registry.metadataFor(TestEntities.User.class);
+        return registry.metadataFor(User.class);
     }
 
     private EntityMetadata order() {
-        return registry.metadataFor(TestEntities.Order.class);
+        return registry.metadataFor(Order.class);
     }
 
     private ColumnValue value(EntityMetadata entity, String column, Object value) {
@@ -147,10 +148,10 @@ class SqlGeneratorTest {
     }
 
     @Test
-    @DisplayName("count(*) ignores the projection but keeps the clause")
-    void generatesCount() {
-        assertThat(generator.count(user(), "", List.of())).isEqualTo("SELECT count(*) FROM users");
-        assertThat(generator.count(user(), "WHERE active = ?", List.of()))
+    @DisplayName("an aggregate ignores the projection but keeps the clause")
+    void generatesAggregate() {
+        assertThat(generator.aggregate(user(), "")).isEqualTo("SELECT count(*) FROM users");
+        assertThat(generator.aggregate(user(), "WHERE active = ?"))
                 .isEqualTo("SELECT count(*) FROM users WHERE active = ?");
     }
 

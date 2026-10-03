@@ -236,17 +236,14 @@ public final class SessionImpl implements Session {
         log.debug("Session closed: {}", counters.snapshot());
     }
 
-    /** @return the row loader, so a query returns managed instances */
     RowLoader rowLoader() {
         return rowLoader;
     }
 
-    /** @return the dialect that renders LIMIT and OFFSET */
     Dialect dialect() {
         return factory.sqlGenerator().dialect();
     }
 
-    /** @return the JDBC connection of this session */
     Connection connection() {
         return transactions.connection();
     }

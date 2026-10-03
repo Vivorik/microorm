@@ -7,188 +7,29 @@ import io.microorm.annotation.Id;
 import io.microorm.annotation.ManyToOne;
 import io.microorm.annotation.OneToMany;
 import io.microorm.annotation.Table;
-import io.microorm.annotation.Version;
-import java.math.BigDecimal;
+import io.microorm.example.User;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
 /**
- * Entity fixtures shared by metadata unit tests.
+ * Entity fixtures for the unit tests.
  *
- * <p>They mirror the {@code users} / {@code orders} schema used by the integration tests, so a
- * mapping mistake shows up in both suites.
+ * <p>{@link io.microorm.example.User} and {@link io.microorm.example.Order} are deliberately absent:
+ * the unit tests use the very same entities as the integration tests and the README, so a mapping
+ * mistake cannot hide in a copy that only the fast tests see. What is left here are the shapes the
+ * happy path cannot produce - unmappable types, two identifiers, a final class, an association to a
+ * non-entity - plus a few column-type edge cases.
  */
 public final class TestEntities {
 
     private TestEntities() {
     }
 
-    /** Mirror of the {@code users} table. */
-    @Entity(table = "ignored_by_table")
-    @Table(name = "users")
-    public static class User {
-
-        @Id
-        @GeneratedValue
-        private Long id;
-
-        @Column(name = "email", nullable = false)
-        private String email;
-
-        private String name;
-
-        private Integer age;
-
-        private Boolean active;
-
-        @Column(columnDefinition = "TEXT")
-        private String bio;
-
-        @Column(name = "created_at", insertable = false, updatable = false)
-        private LocalDateTime createdAt;
-
-        @Version
-        private int version;
-
-        public User() {
-        }
-
-        public User(String email, String name, Integer age, Boolean active) {
-            this.email = email;
-            this.name = name;
-            this.age = age;
-            this.active = active;
-        }
-
-        public Long getId() {
-            return id;
-        }
-
-        public void setId(Long id) {
-            this.id = id;
-        }
-
-        public String getEmail() {
-            return email;
-        }
-
-        public void setEmail(String email) {
-            this.email = email;
-        }
-
-        public String getName() {
-            return name;
-        }
-
-        public void setName(String name) {
-            this.name = name;
-        }
-
-        public Integer getAge() {
-            return age;
-        }
-
-        public void setAge(Integer age) {
-            this.age = age;
-        }
-
-        public Boolean getActive() {
-            return active;
-        }
-
-        public void setActive(Boolean active) {
-            this.active = active;
-        }
-
-        public String getBio() {
-            return bio;
-        }
-
-        public void setBio(String bio) {
-            this.bio = bio;
-        }
-
-        public LocalDateTime getCreatedAt() {
-            return createdAt;
-        }
-
-        public void setCreatedAt(LocalDateTime createdAt) {
-            this.createdAt = createdAt;
-        }
-
-        public int getVersion() {
-            return version;
-        }
-    }
-
-    /** Mirror of the {@code orders} table, including a LAZY many-to-one association. */
-    @Entity(table = "orders")
-    public static class Order {
-
-        @Id
-        @GeneratedValue(strategy = io.microorm.annotation.GenerationType.SEQUENCE)
-        private Long id;
-
-        @ManyToOne(fetch = io.microorm.annotation.FetchType.LAZY)
-        private User user;
-
-        private String description;
-
-        private BigDecimal amount;
-
-        @Version
-        private Long version;
-
-        public Order() {
-        }
-
-        public Order(String description, BigDecimal amount) {
-            this.description = description;
-            this.amount = amount;
-        }
-
-        public Long getId() {
-            return id;
-        }
-
-        public void setId(Long id) {
-            this.id = id;
-        }
-
-        public User getUser() {
-            return user;
-        }
-
-        public void setUser(User user) {
-            this.user = user;
-        }
-
-        public String getDescription() {
-            return description;
-        }
-
-        public void setDescription(String description) {
-            this.description = description;
-        }
-
-        public BigDecimal getAmount() {
-            return amount;
-        }
-
-        public void setAmount(BigDecimal amount) {
-            this.amount = amount;
-        }
-
-        public Long getVersion() {
-            return version;
-        }
-    }
-
     /** Table name must come from {@code @Table}. */
     @Entity
-    @io.microorm.annotation.Table(name = "audit_events")
+    @Table(name = "audit_events")
     public static class AuditEvent {
 
         @Id

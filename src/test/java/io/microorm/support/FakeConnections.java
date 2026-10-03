@@ -12,12 +12,13 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Fake JDBC objects built on dynamic proxies, so that pool unit tests need neither a database nor
- * Mockito.
+ * A spy for a single JDBC connection, used by the pool and transaction tests.
  *
- * <p>Only the methods the pool is allowed to touch are implemented. Everything else throws
- * {@link UnsupportedOperationException}, which turns "the pool called something unexpected" into a
- * failing test instead of a silently accepted behaviour.
+ * <p>It answers the handful of methods those components are allowed to call and records what happened.
+ * Anything else throws {@link UnsupportedOperationException}, which turns "the pool called something
+ * unexpected" into a failing test rather than a silently accepted behaviour. For tests that need
+ * scripted result sets there is {@link FakeJdbc}, which models a whole database instead of one
+ * connection.
  */
 public final class FakeConnections {
 

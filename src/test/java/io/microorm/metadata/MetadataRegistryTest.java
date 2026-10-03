@@ -16,6 +16,8 @@ import java.util.concurrent.TimeoutException;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import io.microorm.example.User;
+import io.microorm.example.Order;
 
 class MetadataRegistryTest {
 
@@ -25,20 +27,20 @@ class MetadataRegistryTest {
     @Test
     @DisplayName("parses an entity only once no matter how often it is requested")
     void parsesEachEntityOnce() {
-        EntityMetadata first = registry.metadataFor(TestEntities.User.class);
-        EntityMetadata second = registry.metadataFor(TestEntities.User.class);
+        EntityMetadata first = registry.metadataFor(User.class);
+        EntityMetadata second = registry.metadataFor(User.class);
 
         assertThat(first).isSameAs(second);
         assertThat(parser.parsedEntityCount()).isEqualTo(1);
         assertThat(registry.size()).isEqualTo(1);
-        assertThat(registry.isRegistered(TestEntities.User.class)).isTrue();
+        assertThat(registry.isRegistered(User.class)).isTrue();
     }
 
     @Test
     @DisplayName("caches each entity separately")
     void cachesPerEntity() {
-        registry.metadataFor(TestEntities.User.class);
-        EntityMetadata order = registry.metadataFor(TestEntities.Order.class);
+        registry.metadataFor(User.class);
+        EntityMetadata order = registry.metadataFor(Order.class);
 
         assertThat(registry.size()).isEqualTo(2);
         assertThat(order.tableName()).isEqualTo("orders");
@@ -57,7 +59,7 @@ class MetadataRegistryTest {
             List<Future<EntityMetadata>> futures = IntStream.range(0, threads)
                     .mapToObj(i -> pool.submit(() -> {
                         start.await();
-                        return registry.metadataFor(TestEntities.User.class);
+                        return registry.metadataFor(User.class);
                     }))
                     .toList();
             start.countDown();
@@ -75,22 +77,22 @@ class MetadataRegistryTest {
     @Test
     @DisplayName("eager registration reports metadata in registration order")
     void registersEagerly() {
-        List<EntityMetadata> metadata = registry.register(TestEntities.Order.class, TestEntities.User.class);
+        List<EntityMetadata> metadata = registry.register(Order.class, User.class);
 
         assertThat(metadata).map(EntityMetadata::type)
-                .containsExactly(TestEntities.Order.class, TestEntities.User.class);
+                .containsExactly(Order.class, User.class);
         assertThat(registry.knownMetadata()).hasSize(2);
-        assertThat(registry.asMap()).containsOnlyKeys(TestEntities.Order.class, TestEntities.User.class);
+        assertThat(registry.asMap()).containsOnlyKeys(Order.class, User.class);
     }
 
     @Test
     @DisplayName("evicting a class forces the next lookup to parse again")
     void evicts() {
-        registry.metadataFor(TestEntities.User.class);
-        registry.evict(TestEntities.User.class);
+        registry.metadataFor(User.class);
+        registry.evict(User.class);
 
-        assertThat(registry.isRegistered(TestEntities.User.class)).isFalse();
-        registry.metadataFor(TestEntities.User.class);
+        assertThat(registry.isRegistered(User.class)).isFalse();
+        registry.metadataFor(User.class);
         assertThat(parser.parsedEntityCount()).isEqualTo(2);
     }
 
@@ -105,6 +107,6 @@ class MetadataRegistryTest {
     @Test
     @DisplayName("describe() is used in log messages")
     void describesEntity() {
-        assertThat(registry.metadataFor(TestEntities.User.class).describe()).isEqualTo("User(users)");
+        assertThat(registry.metadataFor(User.class).describe()).isEqualTo("User(users)");
     }
 }

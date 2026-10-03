@@ -1,7 +1,6 @@
 package io.microorm.sql;
 
 import io.microorm.metadata.EntityMetadata;
-import io.microorm.metadata.FieldMetadata;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -151,19 +150,15 @@ public final class SqlGenerator {
     }
 
     /**
-     * Builds {@code SELECT count(*)}.
+     * Builds a single-column aggregate such as {@code SELECT count(*) ...}.
      *
-     * @param entity     metadata of the entity
-     * @param clause     text appended after the table name, already validated
-     * @param parameters bind parameters of the clause
-     * @return the statement
+     * @param entity metadata of the entity
+     * @param clause text appended after the table name, already validated
+     * @return the SQL text
      */
-    public String count(EntityMetadata entity, String clause, List<Bind> parameters) {
-        String sql = "SELECT count(*) FROM " + entity.tableName();
-        if (!clause.isBlank()) {
-            sql = sql + " " + clause;
-        }
-        return sql;
+    public String aggregate(EntityMetadata entity, String clause) {
+        return "SELECT count(*) FROM " + entity.tableName()
+                + (clause.isBlank() ? "" : " " + clause);
     }
 
     /**
@@ -180,10 +175,5 @@ public final class SqlGenerator {
         return values.stream()
                 .map(value -> new Bind(value.value(), value.columnType()))
                 .toList();
-    }
-
-    /** @return the fields of an entity that a fresh INSERT has to write */
-    public static List<FieldMetadata> insertableColumns(EntityMetadata entity) {
-        return entity.insertableFields();
     }
 }

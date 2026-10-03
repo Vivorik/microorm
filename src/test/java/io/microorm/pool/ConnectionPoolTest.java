@@ -400,10 +400,11 @@ class ConnectionPoolTest {
         try (ConnectionPool pool = pool(config().minSize(0).maxSize(1).build())) {
             assertThat(pool.metrics().saturated()).isFalse();
 
-            try (Connection connection = pool.borrow()) {
-                assertThat(pool.metrics().saturated()).isTrue();
-                assertThat(pool.metrics().toString()).contains("active=1");
-            }
+            Connection borrowed = pool.borrow();
+            assertThat(borrowed.isClosed()).isFalse();
+            assertThat(pool.metrics().saturated()).isTrue();
+            assertThat(pool.metrics().toString()).contains("active=1");
+            borrowed.close();
             assertThat(pool.metrics().saturated()).isFalse();
         }
     }

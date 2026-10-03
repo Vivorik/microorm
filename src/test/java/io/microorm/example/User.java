@@ -4,7 +4,6 @@ import io.microorm.annotation.Column;
 import io.microorm.annotation.Entity;
 import io.microorm.annotation.GeneratedValue;
 import io.microorm.annotation.Id;
-import io.microorm.annotation.Transient;
 import io.microorm.annotation.Version;
 import java.time.LocalDateTime;
 

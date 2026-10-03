@@ -9,14 +9,15 @@ import io.microorm.support.TestEntities;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import io.microorm.example.User;
 
 class LazyProxyFactoryTest {
 
     private final MetadataRegistry registry = new MetadataRegistry();
     private final LazyProxyFactory factory = new LazyProxyFactory();
 
-    private TestEntities.User stored(long id, String name) {
-        TestEntities.User user = new TestEntities.User(name + "@example.com", name, 30, true);
+    private User stored(long id, String name) {
+        User user = new User(name + "@example.com", name, 30, true);
         user.setId(id);
         return user;
     }
@@ -26,14 +27,14 @@ class LazyProxyFactoryTest {
     void doesNotLoadOnCreation() {
         AtomicInteger loads = new AtomicInteger();
 
-        TestEntities.User proxy = factory.createProxy(
-                registry.metadataFor(TestEntities.User.class), 1L, id -> {
+        User proxy = factory.createProxy(
+                registry.metadataFor(User.class), 1L, id -> {
                     loads.incrementAndGet();
                     return stored((Long) id, "Ann");
                 });
 
         assertThat(proxy).isNotNull();
-        assertThat(proxy).isInstanceOf(TestEntities.User.class);
+        assertThat(proxy).isInstanceOf(User.class);
         assertThat(proxy).isInstanceOf(EntityProxy.class);
         assertThat(((EntityProxy) proxy).isMicroOrmInitialized()).isFalse();
         assertThat(loads).hasValue(0);
@@ -43,8 +44,8 @@ class LazyProxyFactoryTest {
     @DisplayName("the identifier is answered from the field without loading")
     void identifierDoesNotTriggerLoading() {
         AtomicInteger loads = new AtomicInteger();
-        TestEntities.User proxy = factory.createProxy(
-                registry.metadataFor(TestEntities.User.class), 42L, id -> {
+        User proxy = factory.createProxy(
+                registry.metadataFor(User.class), 42L, id -> {
                     loads.incrementAndGet();
                     return stored((Long) id, "Ann");
                 });
@@ -58,8 +59,8 @@ class LazyProxyFactoryTest {
     @DisplayName("the first access to any other property loads the entity exactly once")
     void loadsOnFirstPropertyAccess() {
         AtomicInteger loads = new AtomicInteger();
-        TestEntities.User proxy = factory.createProxy(
-                registry.metadataFor(TestEntities.User.class), 1L, id -> {
+        User proxy = factory.createProxy(
+                registry.metadataFor(User.class), 1L, id -> {
                     loads.incrementAndGet();
                     return stored((Long) id, "Ann");
                 });
@@ -76,10 +77,10 @@ class LazyProxyFactoryTest {
     @Test
     @DisplayName("a loaded proxy behaves like a full entity")
     void behavesLikeTheEntity() {
-        TestEntities.User stored = stored(5L, "Bob");
+        User stored = stored(5L, "Bob");
         stored.setBio("hi");
-        TestEntities.User proxy = factory.createProxy(
-                registry.metadataFor(TestEntities.User.class), 5L, id -> stored);
+        User proxy = factory.createProxy(
+                registry.metadataFor(User.class), 5L, id -> stored);
 
         assertThat(proxy.getEmail()).isEqualTo("Bob@example.com");
         assertThat(proxy.getBio()).isEqualTo("hi");
@@ -90,8 +91,8 @@ class LazyProxyFactoryTest {
     @Test
     @DisplayName("writing to a proxy is allowed and reaches the loaded state")
     void allowsWriting() {
-        TestEntities.User proxy = factory.createProxy(
-                registry.metadataFor(TestEntities.User.class), 1L, id -> stored((Long) id, "Ann"));
+        User proxy = factory.createProxy(
+                registry.metadataFor(User.class), 1L, id -> stored((Long) id, "Ann"));
 
         proxy.getName();
         proxy.setName("Anna");
@@ -103,8 +104,8 @@ class LazyProxyFactoryTest {
     @DisplayName("toString describes the proxy without loading it")
     void describesWithoutLoading() {
         AtomicInteger loads = new AtomicInteger();
-        TestEntities.User proxy = factory.createProxy(
-                registry.metadataFor(TestEntities.User.class), 7L, id -> {
+        User proxy = factory.createProxy(
+                registry.metadataFor(User.class), 7L, id -> {
                     loads.incrementAndGet();
                     return stored((Long) id, "Ann");
                 });
@@ -114,16 +115,16 @@ class LazyProxyFactoryTest {
 
         proxy.getName();
 
-        assertThat(proxy.toString()).contains(TestEntities.User.class.getName());
+        assertThat(proxy.toString()).contains(User.class.getName());
         assertThat(loads).hasValue(1);
     }
 
     @Test
     @DisplayName("equals and hashCode use identity, like a reference to a not yet loaded row")
     void usesIdentitySemantics() {
-        TestEntities.User proxy = factory.createProxy(
-                registry.metadataFor(TestEntities.User.class), 1L, id -> stored((Long) id, "Ann"));
-        TestEntities.User other = stored(1L, "Ann");
+        User proxy = factory.createProxy(
+                registry.metadataFor(User.class), 1L, id -> stored((Long) id, "Ann"));
+        User other = stored(1L, "Ann");
 
         assertThat(proxy).isNotEqualTo(other);
         assertThat(proxy).isEqualTo(proxy);
@@ -134,8 +135,8 @@ class LazyProxyFactoryTest {
     @DisplayName("a proxy that is dereferenced after the session closed fails loudly")
     void failsWhenSessionIsClosed() {
         boolean[] sessionOpen = {true};
-        TestEntities.User proxy = factory.createProxy(
-                registry.metadataFor(TestEntities.User.class), 1L, id -> {
+        User proxy = factory.createProxy(
+                registry.metadataFor(User.class), 1L, id -> {
                     if (!sessionOpen[0]) {
                         throw new LazyInitializationException(
                                 "Cannot load User(users) with id 1: the session is already closed");
@@ -153,10 +154,10 @@ class LazyProxyFactoryTest {
     @Test
     @DisplayName("two proxies for the same row share the entity type and stay independent instances")
     void createsIndependentProxies() {
-        TestEntities.User first = factory.createProxy(
-                registry.metadataFor(TestEntities.User.class), 1L, id -> stored((Long) id, "Ann"));
-        TestEntities.User second = factory.createProxy(
-                registry.metadataFor(TestEntities.User.class), 1L, id -> stored((Long) id, "Ann"));
+        User first = factory.createProxy(
+                registry.metadataFor(User.class), 1L, id -> stored((Long) id, "Ann"));
+        User second = factory.createProxy(
+                registry.metadataFor(User.class), 1L, id -> stored((Long) id, "Ann"));
 
         assertThat(first).isNotSameAs(second);
         assertThat(first.getClass()).isEqualTo(second.getClass());

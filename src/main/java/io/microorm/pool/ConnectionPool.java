@@ -139,7 +139,6 @@ public final class ConnectionPool implements AutoCloseable {
         log.warn("Connection discarded: {}", reason);
     }
 
-    /** @return a snapshot of the current pool state */
     public PoolMetrics metrics() {
         lock.lock();
         try {
@@ -149,7 +148,6 @@ public final class ConnectionPool implements AutoCloseable {
         }
     }
 
-    /** @return the configuration this pool was created with */
     public PoolConfig config() {
         return config;
     }

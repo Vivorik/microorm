@@ -12,13 +12,14 @@ import io.microorm.pool.PoolConfig;
 import io.microorm.pool.PooledDataSource;
 import io.microorm.proxy.EntityProxy;
 import io.microorm.support.FakeJdbc;
-import io.microorm.support.TestEntities;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import io.microorm.example.User;
+import io.microorm.example.Order;
 
 /**
  * Session behaviour without a database, driven by {@link FakeJdbc}.
@@ -53,7 +54,7 @@ class SessionImplTest {
     void findsById() {
         database.onQuery(SELECT_USER_BY_ID, 1L, "ann@example.com", "Ann", 30, true, null, null, 0);
 
-        Optional<TestEntities.User> found = session.find(TestEntities.User.class, 1L);
+        Optional<User> found = session.find(User.class, 1L);
 
         assertThat(found).isPresent();
         assertThat(found.orElseThrow().getEmail()).isEqualTo("ann@example.com");
@@ -69,8 +70,8 @@ class SessionImplTest {
     void servesSecondFindFromCache() {
         database.onQuery(SELECT_USER_BY_ID, 1L, "ann@example.com", "Ann", 30, true, null, null, 0);
 
-        TestEntities.User first = session.find(TestEntities.User.class, 1L).orElseThrow();
-        TestEntities.User second = session.find(TestEntities.User.class, 1L).orElseThrow();
+        User first = session.find(User.class, 1L).orElseThrow();
+        User second = session.find(User.class, 1L).orElseThrow();
 
         assertThat(second).isSameAs(first);
         assertThat(database.sql()).hasSize(1);
@@ -85,17 +86,17 @@ class SessionImplTest {
                 new Object[]{1L, "ann@example.com", "Ann", 30, true, null, null, 0},
                 new Object[]{2L, "bob@example.com", "Bob", 40, true, null, null, 0}));
 
-        List<TestEntities.User> users = session.findAll(TestEntities.User.class);
+        List<User> users = session.findAll(User.class);
 
         assertThat(users).hasSize(2);
-        assertThat(users).extracting(TestEntities.User::getName).containsExactly("Ann", "Bob");
+        assertThat(users).extracting(User::getName).containsExactly("Ann", "Bob");
         assertThat(session.statistics().rowsLoaded()).isEqualTo(2);
     }
 
     @Test
     @DisplayName("findOrThrow reports the missing row")
     void failsWhenMissing() {
-        assertThatThrownBy(() -> session.findOrThrow(TestEntities.User.class, 99L))
+        assertThatThrownBy(() -> session.findOrThrow(User.class, 99L))
                 .isInstanceOf(io.microorm.exception.EntityNotFoundException.class)
                 .hasMessageContaining("User with id 99 was not found");
     }
@@ -103,14 +104,14 @@ class SessionImplTest {
     @Test
     @DisplayName("find of a null id is empty and issues no SQL")
     void ignoresNullId() {
-        assertThat(session.find(TestEntities.User.class, null)).isEmpty();
+        assertThat(session.find(User.class, null)).isEmpty();
         assertThat(database.sql()).isEmpty();
     }
 
     @Test
     @DisplayName("persist requires a transaction")
     void persistRequiresTransaction() {
-        TestEntities.User user = new TestEntities.User("ann@example.com", "Ann", 30, true);
+        User user = new User("ann@example.com", "Ann", 30, true);
 
         assertThatThrownBy(() -> session.persist(user))
                 .isInstanceOf(TransactionRequiredException.class)
@@ -123,7 +124,7 @@ class SessionImplTest {
     void insertsWithGeneratedId() {
         database.onQuery("INSERT INTO users (email, name, age, active, bio, version) VALUES (?, ?, ?, ?, ?, ?)"
                         + " RETURNING id", 7L);
-        TestEntities.User user = new TestEntities.User("ann@example.com", "Ann", 30, true);
+        User user = new User("ann@example.com", "Ann", 30, true);
         user.setBio("hello");
 
         session.beginTransaction();
@@ -143,9 +144,9 @@ class SessionImplTest {
         database.onUpdate("INSERT INTO orders (id, user_id, description, amount, version) "
                 + "VALUES (?, ?, ?, ?, ?)", 1);
 
-        TestEntities.Order order = new TestEntities.Order("book", new BigDecimal("10.00"));
-        order.setUser(new TestEntities.User("ann@example.com", "Ann", 30, true));
-        ((TestEntities.User) order.getUser()).setId(3L);
+        Order order = new Order("book", new BigDecimal("10.00"));
+        order.setUser(new User("ann@example.com", "Ann", 30, true));
+        ((User) order.getUser()).setId(3L);
 
         session.beginTransaction();
         session.persist(order);
@@ -166,7 +167,7 @@ class SessionImplTest {
                 + "VALUES (?, ?, ?, ?, ?)", 1);
 
         session.beginTransaction();
-        session.persist(new TestEntities.Order("book", new BigDecimal("10.00")));
+        session.persist(new Order("book", new BigDecimal("10.00")));
         session.commit();
 
         assertThat(database.statement("INSERT INTO orders").orElseThrow().parameters())
@@ -180,7 +181,7 @@ class SessionImplTest {
                 + " RETURNING id", 11L);
 
         session.beginTransaction();
-        session.persist(new TestEntities.User("ann@example.com", "Ann", 30, true));
+        session.persist(new User("ann@example.com", "Ann", 30, true));
         session.commit();
 
         assertThat(database.sql()).doesNotContain("nextval");
@@ -191,7 +192,7 @@ class SessionImplTest {
     @DisplayName("persist refuses an entity that is already managed")
     void refusesDuplicateInsert() {
         database.onQuery(SELECT_USER_BY_ID, 1L, "ann@example.com", "Ann", 30, true, null, null, 0);
-        TestEntities.User loaded = session.find(TestEntities.User.class, 1L).orElseThrow();
+        User loaded = session.find(User.class, 1L).orElseThrow();
 
         session.beginTransaction();
 
@@ -204,7 +205,7 @@ class SessionImplTest {
     @DisplayName("changing one field produces an UPDATE with exactly that column and the version")
     void updatesOnlyDirtyColumns() {
         database.onQuery(SELECT_USER_BY_ID, 1L, "ann@example.com", "Ann", 30, true, null, null, 3);
-        TestEntities.User user = session.find(TestEntities.User.class, 1L).orElseThrow();
+        User user = session.find(User.class, 1L).orElseThrow();
 
         session.beginTransaction();
         user.setName("Anna");
@@ -223,7 +224,7 @@ class SessionImplTest {
     @DisplayName("an unchanged entity is not written at all")
     void skipsUnchangedEntity() {
         database.onQuery(SELECT_USER_BY_ID, 1L, "ann@example.com", "Ann", 30, true, null, null, 3);
-        session.find(TestEntities.User.class, 1L);
+        session.find(User.class, 1L);
 
         session.beginTransaction();
         session.commit();
@@ -237,11 +238,11 @@ class SessionImplTest {
     void flushesBeforeReading() {
         database.onQuery(SELECT_USER_BY_ID, 1L, "ann@example.com", "Ann", 30, true, null, null, 0);
         database.onQuery(SELECT_ALL_USERS, 1L, "anna@example.com", "Anna", 30, true, null, null, 1);
-        TestEntities.User user = session.find(TestEntities.User.class, 1L).orElseThrow();
+        User user = session.find(User.class, 1L).orElseThrow();
 
         session.beginTransaction();
         user.setName("Anna");
-        List<TestEntities.User> all = session.findAll(TestEntities.User.class);
+        List<User> all = session.findAll(User.class);
 
         assertThat(all).hasSize(1);
         // The UPDATE happens before the SELECT: that is the whole point of flushing before a read.
@@ -254,7 +255,7 @@ class SessionImplTest {
     void detectsLostUpdate() {
         database.onQuery(SELECT_USER_BY_ID, 1L, "ann@example.com", "Ann", 30, true, null, null, 3);
         database.onUpdate("UPDATE users SET name = ?, version = ? WHERE id = ? AND version = ?", 0);
-        TestEntities.User user = session.find(TestEntities.User.class, 1L).orElseThrow();
+        User user = session.find(User.class, 1L).orElseThrow();
 
         session.beginTransaction();
         user.setName("Anna");
@@ -271,7 +272,7 @@ class SessionImplTest {
     void doomsTransactionOnFailure() {
         database.onQuery(SELECT_USER_BY_ID, 1L, "ann@example.com", "Ann", 30, true, null, null, 3);
         database.onUpdate("UPDATE users SET name = ?, version = ? WHERE id = ? AND version = ?", 0);
-        TestEntities.User user = session.find(TestEntities.User.class, 1L).orElseThrow();
+        User user = session.find(User.class, 1L).orElseThrow();
 
         session.beginTransaction();
         user.setName("Anna");
@@ -287,7 +288,7 @@ class SessionImplTest {
     void detectsLostDelete() {
         database.onQuery(SELECT_USER_BY_ID, 1L, "ann@example.com", "Ann", 30, true, null, null, 3);
         database.onUpdate("DELETE FROM users WHERE id = ? AND version = ?", 0);
-        TestEntities.User user = session.find(TestEntities.User.class, 1L).orElseThrow();
+        User user = session.find(User.class, 1L).orElseThrow();
 
         session.beginTransaction();
         session.remove(user);
@@ -301,7 +302,7 @@ class SessionImplTest {
     @DisplayName("remove issues a version guarded DELETE")
     void deletes() {
         database.onQuery(SELECT_USER_BY_ID, 1L, "ann@example.com", "Ann", 30, true, null, null, 3);
-        TestEntities.User user = session.find(TestEntities.User.class, 1L).orElseThrow();
+        User user = session.find(User.class, 1L).orElseThrow();
 
         session.beginTransaction();
         session.remove(user);
@@ -317,9 +318,9 @@ class SessionImplTest {
     @DisplayName("merge of a detached entity updates the managed instance")
     void mergesDetachedEntity() {
         database.onQuery(SELECT_USER_BY_ID, 1L, "ann@example.com", "Ann", 30, true, null, null, 1);
-        TestEntities.User managed = session.find(TestEntities.User.class, 1L).orElseThrow();
+        User managed = session.find(User.class, 1L).orElseThrow();
 
-        TestEntities.User detached = new TestEntities.User("ann@example.com", "Anna", 31, false);
+        User detached = new User("ann@example.com", "Anna", 31, false);
         detached.setId(1L);
 
         session.beginTransaction();
@@ -341,7 +342,7 @@ class SessionImplTest {
     void mergesAsInsertWhenUnknown() {
         database.onQuery("INSERT INTO users (id, email, name, age, active, bio, version) "
                 + "VALUES (?, ?, ?, ?, ?, ?, ?)", 1);
-        TestEntities.User detached = new TestEntities.User("ann@example.com", "Ann", 30, true);
+        User detached = new User("ann@example.com", "Ann", 30, true);
         detached.setId(1L);
 
         session.beginTransaction();
@@ -357,7 +358,7 @@ class SessionImplTest {
     void mergesTransientEntity() {
         database.onQuery("INSERT INTO users (email, name, age, active, bio, version) VALUES (?, ?, ?, ?, ?, ?)"
                 + " RETURNING id", 5L);
-        TestEntities.User transientUser = new TestEntities.User("ann@example.com", "Ann", 30, true);
+        User transientUser = new User("ann@example.com", "Ann", 30, true);
 
         session.beginTransaction();
         Object merged = session.merge(transientUser);
@@ -373,8 +374,8 @@ class SessionImplTest {
         database.onQuery(SELECT_ALL_ORDERS, 1L, 42L, "book", new BigDecimal("10.00"), 0L);
         database.onQuery(SELECT_USER_BY_ID, 42L, "ann@example.com", "Ann", 30, true, null, null, 0);
 
-        List<TestEntities.Order> orders = session.findAll(TestEntities.Order.class);
-        TestEntities.Order order = orders.get(0);
+        List<Order> orders = session.findAll(Order.class);
+        Order order = orders.get(0);
 
         assertThat(order.getUser()).isInstanceOf(EntityProxy.class);
         assertThat(((EntityProxy) order.getUser()).isMicroOrmInitialized()).isFalse();
@@ -390,7 +391,7 @@ class SessionImplTest {
     void resolvesNullAssociation() {
         database.onQuery(SELECT_ALL_ORDERS, 1L, null, "book", new BigDecimal("10.00"), 0L);
 
-        TestEntities.Order order = session.findAll(TestEntities.Order.class).get(0);
+        Order order = session.findAll(Order.class).get(0);
 
         assertThat(order.getUser()).isNull();
     }
@@ -398,7 +399,7 @@ class SessionImplTest {
     @Test
     @DisplayName("getReference does not hit the database until a property is read")
     void getReferenceIsLazy() {
-        TestEntities.User reference = session.getReference(TestEntities.User.class, 9L);
+        User reference = session.getReference(User.class, 9L);
 
         assertThat(reference).isInstanceOf(EntityProxy.class);
         assertThat(reference.getId()).isEqualTo(9L);
@@ -413,15 +414,15 @@ class SessionImplTest {
     @DisplayName("getReference of a managed row returns the managed instance itself")
     void getReferenceReturnsManagedInstance() {
         database.onQuery(SELECT_USER_BY_ID, 9L, "ann@example.com", "Ann", 30, true, null, null, 0);
-        TestEntities.User managed = session.find(TestEntities.User.class, 9L).orElseThrow();
+        User managed = session.find(User.class, 9L).orElseThrow();
 
-        assertThat(session.getReference(TestEntities.User.class, 9L)).isSameAs(managed);
+        assertThat(session.getReference(User.class, 9L)).isSameAs(managed);
     }
 
     @Test
     @DisplayName("a proxy dereferenced after close() fails with LazyInitializationException")
     void failsAfterClose() {
-        TestEntities.User reference = session.getReference(TestEntities.User.class, 9L);
+        User reference = session.getReference(User.class, 9L);
 
         session.close();
 
@@ -435,10 +436,10 @@ class SessionImplTest {
     @DisplayName("clear drops the persistence context, so the next find hits the database again")
     void clearEvictsContext() {
         database.onQuery(SELECT_USER_BY_ID, 1L, "ann@example.com", "Ann", 30, true, null, null, 0);
-        TestEntities.User first = session.find(TestEntities.User.class, 1L).orElseThrow();
+        User first = session.find(User.class, 1L).orElseThrow();
 
         session.clear();
-        TestEntities.User second = session.find(TestEntities.User.class, 1L).orElseThrow();
+        User second = session.find(User.class, 1L).orElseThrow();
 
         assertThat(second).isNotSameAs(first);
         assertThat(database.sql()).hasSize(2);
@@ -452,14 +453,14 @@ class SessionImplTest {
         database.onQuery(SELECT_ALL_USERS, 1L, "ann@example.com", "Ann", 30, true, null, null, 0);
 
         session.beginTransaction();
-        session.persist(new TestEntities.User("ann@example.com", "Ann", 30, true));
+        session.persist(new User("ann@example.com", "Ann", 30, true));
         session.beginTransaction();
         session.rollback();
 
         assertThat(session.hasActiveTransaction()).isTrue();
         assertThat(database.sql()).contains("SAVEPOINT microorm_sp_1", "ROLLBACK TO microorm_sp_1");
 
-        session.findAll(TestEntities.User.class);
+        session.findAll(User.class);
         session.commit();
 
         assertThat(database.sql()).endsWith("COMMIT");
@@ -472,7 +473,7 @@ class SessionImplTest {
         database.onQuery("INSERT INTO users (email, name, age, active, bio, version) VALUES (?, ?, ?, ?, ?, ?)"
                 + " RETURNING id", 1L);
         session.beginTransaction();
-        session.persist(new TestEntities.User("ann@example.com", "Ann", 30, true));
+        session.persist(new User("ann@example.com", "Ann", 30, true));
         session.flush();
 
         session.close();
@@ -487,7 +488,7 @@ class SessionImplTest {
     void rejectsUseAfterClose() {
         session.close();
 
-        assertThatThrownBy(() -> session.findAll(TestEntities.User.class))
+        assertThatThrownBy(() -> session.findAll(User.class))
                 .isInstanceOf(PersistenceException.class)
                 .hasMessageContaining("Session is closed");
         assertThatThrownBy(() -> session.beginTransaction())
@@ -501,7 +502,7 @@ class SessionImplTest {
         try (ConnectionPool pool = new ConnectionPool(database.dataSource(),
                 PoolConfig.builder().minSize(1).maxSize(1).build())) {
             try (Session pooled = SessionFactory.builder().pool(pool).build().openSession()) {
-                pooled.findAll(TestEntities.User.class);
+                pooled.findAll(User.class);
                 assertThat(pool.metrics().active()).isEqualTo(1);
             }
 
@@ -521,7 +522,7 @@ class SessionImplTest {
             database.onUpdate("UPDATE users SET name = ?, version = ? WHERE id = ? AND version = ?", 0);
             try (Session broken = sessionFactory.openSession()) {
                 broken.beginTransaction();
-                broken.find(TestEntities.User.class, 1L).orElseThrow().setName("Anna");
+                broken.find(User.class, 1L).orElseThrow().setName("Anna");
 
                 // A statement that failed leaves the transaction unusable, so the connection must not
                 // go back into the pool for somebody else.
@@ -554,10 +555,10 @@ class SessionImplTest {
         database.onUpdate("UPDATE users SET name = ?, version = ? WHERE id = ? AND version = ?", 1);
 
         session.beginTransaction();
-        TestEntities.User user = session.find(TestEntities.User.class, 1L).orElseThrow();
+        User user = session.find(User.class, 1L).orElseThrow();
         user.setName("Anna");
         session.flush();
-        session.find(TestEntities.User.class, 1L);
+        session.find(User.class, 1L);
 
         SessionStatistics statistics = session.statistics();
         assertThat(statistics.findsIssued()).isEqualTo(1);
@@ -582,7 +583,7 @@ class SessionImplTest {
     void registersEntitiesEagerly() {
         SessionFactory sessionFactory = SessionFactory.builder()
                 .dataSource(database.dataSource())
-                .entities(TestEntities.User.class, TestEntities.Order.class)
+                .entities(User.class, Order.class)
                 .build();
 
         assertThat(sessionFactory.knownEntities()).hasSize(2);

@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import io.microorm.example.User;
 
 class QueryValidatorTest {
 
@@ -84,7 +85,7 @@ class QueryValidatorTest {
     @DisplayName("field() returns the mapped field for a known column")
     void resolvesField() {
         var user = new io.microorm.metadata.MetadataRegistry()
-                .metadataFor(io.microorm.support.TestEntities.User.class);
+                .metadataFor(io.microorm.example.User.class);
 
         assertThat(QueryValidator.field(user, "email").name()).isEqualTo("email");
         assertThat(QueryValidator.field(user, "email").column()).isEqualTo("email");

@@ -14,7 +14,6 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class IdGenerators {
 
-    private final SqlGenerator sqlGenerator;
     private final SequenceRegistry sequences = new SequenceRegistry();
     private final SequenceIdGenerator sequenceGenerator;
     private final AutoIdGenerator autoGenerator;
@@ -22,7 +21,6 @@ public final class IdGenerators {
     private final Map<Class<?>, IdGenerator> cache = new ConcurrentHashMap<>();
 
     public IdGenerators(SqlGenerator sqlGenerator) {
-        this.sqlGenerator = sqlGenerator;
         this.sequenceGenerator = new SequenceIdGenerator(sqlGenerator);
         this.autoGenerator = new AutoIdGenerator(sequences, sequenceGenerator);
     }
@@ -40,13 +38,10 @@ public final class IdGenerators {
         });
     }
 
-    /** @return the sequence lookup cache, so that a schema migration can reset it */
+    /**
+     * @return the sequence lookup cache, so that a caller can reset it after a schema migration
+     */
     public SequenceRegistry sequences() {
         return sequences;
-    }
-
-    /** @return the SQL generator these strategies were built with */
-    public SqlGenerator sqlGenerator() {
-        return sqlGenerator;
     }
 }

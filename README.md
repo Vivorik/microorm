@@ -3,66 +3,51 @@
 [![Java 21](https://img.shields.io/badge/java-21-%23ED8B00?logo=openjdk&logoColor=white)](https://openjdk.org/)
 [![build](https://github.com/actions/workflows/build.yml/badge.svg)](https://github.com/actions/workflows/build.yml)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![no ORM deps](https://img.shields.io/badge/dependencies-2-blue.svg)](pom.xml)
-[![coverage](https://img.shields.io/badge/jacoco-92%25-brightgreen.svg)](https://jacoco.io)
+[![dependencies](https://img.shields.io/badge/dependencies-2-blue.svg)](pom.xml)
 
-Учебный мини-ORM поверх чистого JDBC. Ни Hibernate, ни JPA, ни Spring, ни Lombok: только
-`java.sql`, стандартная библиотека, SLF4J и ByteBuddy для ленивых прокси.
+Учебный мини-ORM поверх чистого JDBC: только `java.sql`, стандартная библиотека, SLF4J и ByteBuddy
+для ленивых прокси. Ни Hibernate, ни JPA, ни Spring, ни Lombok, ни HikariCP.
 
 ```
-Java 21 · Maven · PostgreSQL · 81 файл / ~6350 строк main · 283 юнит-теста + 8 IT-наборов
+Java 21 · Maven · PostgreSQL · 351 тест: 294 юнит + 57 интеграционных · покрытие 93% строк
 ```
 
----
+## Зачем
 
-## Что это и зачем
+Hibernate удобен ровно настолько, насколько непрозрачен. Когда ORM делает `UPDATE` по всем колонкам,
+а запрос уходит в базу дважды, разобраться без понимания внутренностей почти невозможно.
 
-Hibernate — чёрный ящик: вы пишете `@Entity`, а под кадром происходит магия с прокси, кэшем первого
-уровня, dirty checking и пулом соединений. Магия удобна, но именно поэтому непонятна: когда ORM
-делает `UPDATE` по всем колонкам, а запрос уходит в базу дважды, диагностировать это без понимания
-внутренностей почти невозможно.
-
-MicroORM решает ровно эту задачу в обратную сторону: реализует те же механизмы явно и в объёме,
-который можно прочитать за вечер. Здесь нет «магии без объяснения» — каждое решение снабжено
-комментарием `// NOTE:` с причиной, а каждый механизм покрыт тестом, который проверяет конкретное
-поведение, а не «не упало».
-
-Проект не претендует на production-готовность и не пытается быть заменой Hibernate. Он претендует на
-то, что после его чтения вы сможете объяснить коллеге, почему `session.find()` вернул тот же объект,
-который вы уже меняли, и почему два потока, редактирующих одну строку, приводят к
+MicroORM решает задачу в обратную сторону: те же механизмы, но явно и в объёме, который читается за
+вечер. Каждое решение снабжено комментарием с причиной, каждый механизм покрыт тестом на конкретное
+поведение. Это не замена Hibernate — после чтения вы сможете объяснить, почему `find` вернул тот же
+объект, который вы уже меняли, и почему два потока на одной строке приводят к
 `OptimisticLockException`.
-
----
 
 ## Quick start
 
-Пример ниже выполняется тестом [`ReadmeExampleTest`](src/test/java/io/microorm/session/ReadmeExampleTest.java),
-а те же сценарии против настоящего PostgreSQL проверяет
-[`CrudIT`](src/test/java/io/microorm/it/CrudIT.java) — README не может разъехаться с кодом.
-
 ```java
-PGSimpleDataSource dataSource = new PGSimpleDataSource();          // 1. обычный JDBC DataSource
+PGSimpleDataSource dataSource = new PGSimpleDataSource();
 dataSource.setUrl("jdbc:postgresql://localhost:5432/microorm");
 
-SessionFactory factory = SessionFactory.builder()                 // 2. фабрика: DataSource + пул + метаданные
+SessionFactory factory = SessionFactory.builder()
         .connectionPool(dataSource, PoolConfig.builder().minSize(2).maxSize(8).build())
         .entities(User.class, Order.class)
         .build();
 
-try (Session session = factory.openSession()) {                    // 3. сессия = unit of work
+try (Session session = factory.openSession()) {
     session.beginTransaction();
-    session.persist(new User("ann@example.com", "Ann", 30, true));  //    id сгенерирует БД
+    session.persist(new User("ann@example.com", "Ann", 30, true));   // id сгенерирует БД
     session.commit();
 }
 
 try (Session session = factory.openSession()) {
-    User ann = session.findOrThrow(User.class, 1L);               // 4. find: кэш первого уровня
-    ann.setName("Anna");                                           // 5. меняем поле
+    User ann = session.findOrThrow(User.class, 1L);                  // кэш первого уровня
+    ann.setName("Anna");
 
     session.beginTransaction();
-    session.commit();                                              //    flush -> UPDATE только name + version
+    session.commit();                                                 // UPDATE только name + version
 
-    List<User> adults = session.createQuery(User.class)            // 6. fluent-запрос
+    List<User> adults = session.createQuery(User.class)
             .where("age", ">", 18)
             .and("active", "=", true)
             .orderBy("name", SortDirection.ASC)
@@ -71,376 +56,167 @@ try (Session session = factory.openSession()) {
 }
 ```
 
-Сгенерировать DDL для этой схемы:
+Схему можно вывести из метаданных:
 
 ```java
 factory.schemaExporter().exportToConsole(factory.knownEntities());
-// CREATE SEQUENCE IF NOT EXISTS orders_id_seq;
-// CREATE TABLE users (
-//     id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-//     email VARCHAR(255) NOT NULL,
-// ...
-// ALTER TABLE orders ADD CONSTRAINT fk_orders_user_id FOREIGN KEY (user_id) REFERENCES users (id);
 ```
 
----
+Пример выполняется тестом [`ReadmeExampleTest`](src/test/java/io/microorm/session/ReadmeExampleTest.java),
+те же сценарии против настоящего PostgreSQL — в [`CrudIT`](src/test/java/io/microorm/it/CrudIT.java).
 
 ## Архитектура
 
 ```mermaid
 flowchart TB
-    subgraph api["Публичный API"]
-        SF["SessionFactory<br/><i>точка входа</i>"]
-        S["Session"]
-        Q["Query&lt;T&gt;<br/><i>fluent builder</i>"]
-        SE["SchemaExporter"]
-    end
-
-    subgraph session["session"]
-        SI["SessionImpl<br/><i>жизненный цикл</i>"]
-        PC["PersistenceContext<br/><i>first level cache</i>"]
-        UOW["UnitOfWork<br/><i>dirty checking</i>"]
-        FS["FieldSnapshot<br/><i>снимок значений</i>"]
-        RL["RowLoader<br/><i>SELECT + маппинг строк</i>"]
-        EX["StatementExecutor<br/><i>INSERT/UPDATE/DELETE</i>"]
-    end
-
-    subgraph meta["metadata"]
-        MR["MetadataRegistry<br/><i>ConcurrentHashMap</i>"]
-        MP["MetadataParser<br/><i>рефлексия</i>"]
-        EM["EntityMetadata /<br/>FieldMetadata"]
-        IV["IdentifierValidator"]
-    end
-
-    subgraph sql["sql + id"]
-        SG["SqlGenerator"]
-        PB["ParameterBinder"]
-        PM["EntityRowMapper"]
-        IDG["IdGenerator<br/><i>sealed: AUTO / IDENTITY / SEQUENCE</i>"]
-        DL["Dialect<br/><i>PostgreSQL</i>"]
-    end
-
-    subgraph infra["Инфраструктура"]
-        TM["TransactionManager"]
-        TX["Transaction<br/><i>+ savepoints</i>"]
-        CP["ConnectionPool"]
-        PD["PooledDataSource"]
-        LP["LazyProxyFactory<br/><i>ByteBuddy</i>"]
-    end
-
-    SF --> S
-    SF --> MR
-    SF --> CP
-    SF --> PD
-    S --> SI
-    SI --> PC
-    SI --> UOW
-    SI --> RL
-    SI --> EX
-    SI --> TM
-    SI --> Q
-    UOW --> FS
-    MR --> MP
-    MP --> EM
-    MP --> IV
-    EM --> SG
-    SG --> DL
-    SG --> PB
-    RL --> PM
-    RL --> LP
-    EX --> IDG
-    TM --> TX
-    TX --> PD
-    CP --> PD
-    SE --> EM
+    SF["SessionFactory"] --> S["Session"]
+    S --> SI["SessionImpl<br/>жизненный цикл"]
+    SI --> PC["PersistenceContext<br/>first level cache"]
+    SI --> UOW["UnitOfWork<br/>dirty checking"]
+    SI --> RL["RowLoader<br/>SELECT + маппинг строк"]
+    SI --> EX["StatementExecutor<br/>INSERT/UPDATE/DELETE"]
+    SI --> TM["TransactionManager"]
+    SI --> Q["Query&lt;T&gt;"]
+    UOW --> FS["FieldSnapshot"]
+    SF --> MR["MetadataRegistry"]
+    MR --> EM["EntityMetadata"]
+    EM --> SG["SqlGenerator"] --> PB["ParameterBinder"]
+    RL --> LP["LazyProxyFactory<br/>ByteBuddy"]
+    EX --> IDG["IdGenerator<br/>AUTO / IDENTITY / SEQUENCE"]
+    TM --> CP["ConnectionPool"] --> PD["PooledDataSource"]
+    SF --> SE["SchemaExporter"]
     Q --> SG
 ```
 
-Ключевое решение: **`SessionImpl` ничего не знает про SQL-текст, а `SqlGenerator` ничего не знает про
-сессию.** Первый занимается жизненным циклом, второй превращает метаданные и значения в строку
-запроса. Благодаря этому «какие колонки считаются изменёнными» проверяется юнит-тестом без базы.
-
----
+Главное решение: **`SessionImpl` ничего не знает про SQL-текст, а `SqlGenerator` — ничего про сессию.**
+Первый занимается жизненным циклом, второй превращает метаданные и значения в запрос. Поэтому
+«какие колонки считаются изменёнными» проверяется юнит-тестом без базы.
 
 ## Как это работает
 
-### Как парсятся метаданные
+**Метаданные.** `MetadataParser` обходит поля и строго решает: `@Id` (тип `Long`, `Integer` или
+`UUID`), `@Version` (целочисленный), `@ManyToOne` (колонка `<поле>_id`), базовый тип — обычная колонка,
+всё остальное — `MappingException` со списком допустимых вариантов. Ошибки маппинга возникают при
+первом обращении, а не посреди транзакции. Имена таблиц и колонок по умолчанию — `snake_case`, поэтому
+всё, что попадает в SQL, проходит `IdentifierValidator`. Результат кэшируется в `ConcurrentHashMap`:
+парсинг одного класса случается ровно один раз.
 
-`MetadataParser` обходит `getDeclaredFields()` и на каждом поле принимает решение:
+**Persistence context.** `Map<Class, Map<Id, Entity>>` внутри сессии даёт две гарантии: одна строка —
+один объект (поэтому изменение видно через все ссылки) и ноль повторных `SELECT`. Если строка читается
+повторно, а объект уже управляется, побеждает **управляемый** — иначе `find` выдал бы второй объект
+той же строки, а dirty checking увидел бы только более новый.
 
-| Ситуация | Результат |
-|---|---|
-| `static`, `synthetic`, `transient`, `@Transient` | пропускается |
-| `@Id` | и идентификатор; тип ограничен `Long`, `Integer`, `UUID` |
-| `@Version` | и версия; тип ограничен целочисленным |
-| `@ManyToOne` | поле-ассоциация, колонка = `joinColumn` или `<поле>_id` |
-| `@OneToMany` | `UnsupportedOperationException` на этапе парсинга |
-| базовый тип | обычная колонка, имя = `@Column#name` или `snake_case(поле)` |
-| что-то ещё | `MappingException` со списком допустимых вариантов |
+**Dirty checking.** Снимок значений снимается при загрузке; на `flush()` текущие значения сравниваются
+со снимком, и `UPDATE` упоминает только изменившиеся колонки плюс `version = version + 1`, а в `WHERE`
+добавляется `AND version = <загруженная версия>`. Отсюда и поведение: если вернуть поле к исходному
+значению, `UPDATE` не выполнится вообще. `UnitOfWork` не знает про JDBC — он возвращает
+`List<Change>`, поэтому «какие колонки изменились» тестируется без базы.
 
-Ключевое: **ошибки маппинга возникают при первом обращении к метаданным, а не посреди транзакции**.
-Парсер заранее проверяет наличие no-arg конструктора, единственность `@Id`, тип `@Version` и то, что
-класс с ленивой ассоциацией не `final` (иначе ByteBuddy не сможет создать подкласс).
-
-Имя таблицы: `@Table(name)` → `@Entity(table)` → `snake_case(ИмяКласса)`. Имя колонки по умолчанию —
-`snake_case(имяПоля)`, поэтому всё, что попадает в SQL, удовлетворяет `IdentifierValidator`
-(`^[a-z_][a-z0-9_]*$`).
-
-Результат кэшируется в `MetadataRegistry` (`ConcurrentHashMap`): парсинг одного класса происходит
-ровно один раз, о чём есть отдельный тест с 16 потоками.
-
-### Что такое Persistence Context и зачем он нужен
-
-`PersistenceContext` — это `Map<Class, Map<Id, Entity>>`, живущий внутри сессии. Он даёт две
-гарантии:
-
-1. **Идентичность.** Одна строка — один объект в рамках сессии. Поэтому
-   `session.find(u, 1L) == session.find(u, 1L)`, и изменение через одну ссылку видно через все.
-2. **Отсутствие повторного SQL.** Второй `find` того же идентификатора не ходит в базу вообще:
-   `SessionStatistics` показывает `cacheHits`.
-
-Важная деталь: если строка читается из базы повторно (через `findAll` или запрос), а объект уже
-управляется сессией, **побеждает управляемый объект** — значения из строки копируются в него. Иначе
-`find` мог бы выдать второй объект той же строки, а dirty checking увидел бы только более новый из
-двух.
-
-Кэш первого уровня живёт ровно одну сессию. Кэша второго уровня здесь нет намеренно (см. раздел
-«Что не поддерживается»).
-
-### Как работает Dirty Checking
-
-Механизм состоит из трёх частей:
-
-1. **`FieldSnapshot.capture`** — при загрузке (или после успешной записи) сохраняется снимок значений
-   всех обновляемых колонок и версии. Массивы копируются, иначе изменение `byte[]` «на месте» не было
-   бы замечено (`Objects.deepEquals`).
-2. **`FieldSnapshot.changedColumns`** — на `flush()` текущие значения сравниваются со снимком;
-   возвращаются только действительно изменившиеся колонки.
-3. **`SqlGenerator.update`** — строит `UPDATE` ровно по этим колонкам, плюс `version = version + 1`,
-   а в `WHERE` добавляет `AND version = <загруженная версия>`.
-
-Побочный эффект, который стоит знать: если вернулить изменённое поле к исходному значению, `UPDATE` не
-выполнится вообще — сравнение идёт со снимком момента загрузки, а не с предыдущим `flush`.
-
-```java
-User ann = session.findOrThrow(User.class, 1L);  // SELECT, snapshot = {name=Ann, age=30, version=0}
-ann.setName("Anna");
-// flush -> UPDATE users SET name = ?, version = ? WHERE id = ? AND version = ?
-//         [Anna]                             [1]          [1]            [0]
-```
-
-`UnitOfWork` намеренно не знает про JDBC: он возвращает `List<Change>` (sealed-интерфейс из
-`Insert`/`Update`/`Delete`). Поэтому «какие колонки изменились» тестируется без базы, а
-`SessionImpl.flush()` — это исчерпывающий `switch` по трём видам изменений.
-
-### Как работает Lazy Loading (ByteBuddy-прокси)
-
-`LazyProxyFactory.createProxy` генерирует подкласс сущности в памяти:
-
-```java
-new ByteBuddy()
-    .subclass(User.class)
-    .name("...User$MicroOrmProxy")
-    .implement(EntityProxy.class)
-    .defineField("$$microOrmState", ProxyState.class, Visibility.PRIVATE)
-    .defineField("$$microOrmId", Long.class, Visibility.PRIVATE)
-    .method(named("getId")).intercept(FieldAccessor.ofField("$$microOrmId"))
-    .method(not(named("getId")).and(not(named("isMicroOrmInitialized"))))
-          .intercept(MethodDelegation.to(LazyInitInterceptor.class))
-    .make().load(...).getLoaded();
-```
-
-Ключевые решения и почему они такие:
-
-- **`@SuperCall Callable<?>`** в интерсепторе — аналог `super.method(...)`. После инициализации вызов
-  уходит в настоящую реализацию сущности, поэтому прокси «становится» полноценным объектом: копия
-  состояния не нужна и не происходит.
-- **`getId()` отвечает из поля**, а не вызывает загрузчик. Идентификатор известен заранее, поэтому
-  `order.getUser().getId()` не вызывает SELECT. Отдельное поле `$$microOrmId` нужно потому, что
-  `FieldAccessor` ищет поля только в самом сгенерированном классе, а `id` объявлен в суперклассе и
-  обычно приватен.
-- **`equals`/`hashCode` — identity**, как у ссылки на ещё не загруженную строку.
-- **Классы прокси кэшируются по типу сущности.** Без кэша каждый прокси порождал бы свой класс, и
-  `getClass()` удивлял бы.
-- **`ProxyState` — обычный класс, а не record:** флаг инициализации мутируемый, а record-компонент
-  даёт финальный аксессор.
-
-Если сессия закрыта, а прокси всё ещё жив, вызов любого свойства кроме `getId()` даёт
-`LazyInitializationException` — ровно то самое поведение, ради которого в Hibernate придумали
+**Lazy loading.** ByteBuddy генерирует подкласс сущности; все методы, кроме геттера идентификатора,
+перехватываются. Первый вызов загружает объект, дальше вызовы **делегируются** ему — копия состояния не
+заводится, иначе запись через ссылку не дошла бы до unit of work. `getId()` отвечает из поля и не
+вызывает SELECT. Классы прокси кэшируются по типу. После `close()` сессии обращение к прокси даёт
+`LazyInitializationException` — то самое поведение, ради которого в Hibernate придумали
 `OpenSessionInView`.
 
-### Как устроен Connection Pool
+**Connection pool.** Пять задач: держать от `minSize` до `maxSize` соединений, выдавать и забирать,
+блокировать вместо бесконечного роста, проверять переиспользуемое соединение `SELECT 1` и списывать
+вышедшие из строя. `java.sql.Connection` — интерфейс, поэтому `close()` переопределяется динамическим
+прокси: писать 50 делегирующих методов ради одной изменённой семантики — плохая сделка. Истечение
+ленивое (при ближайшем borrow/return), а `PoolConfig` принимает `Clock`, поэтому таймауты проверяются
+без `sleep`.
 
-`ConnectionPool` сознательно не делает ничего сверх пяти задач:
+**Транзакции.** Вложенность реализована savepoint'ами — единственное, что умеет JDBC. Откат вложенной
+транзакции отменяет только внутреннюю работу, внешняя остаётся валидной. Незавершённая транзакция
+откатывается при закрытии сессии, а провалившийся flush помечает транзакцию как doomed, чтобы
+нельзя было продолжить поверх половины записанного.
 
-1. держит от `minSize` до `maxSize` физических соединений;
-2. выдаёт соединение и забирает обратно на `close()`;
-3. не создаёт неограниченное число соединений, а блокирует вызывающего и сдаётся через
-   `connectionTimeout` с `ConnectionPoolException`;
-4. проверяет переиспользуемое соединение `validationQuery` (`SELECT 1` по умолчанию);
-5. списывает соединения, вышедшие за `idleTimeout` или `maxLifetime`.
+## Что не поддерживается
 
-Соединение оборачивается в `java.lang.reflect.Proxy` (`PooledConnection`), где перехватываются всего
-четыре метода: `close()` (возврат в пул, идемпотентный), `isClosed()`, `equals`/`hashCode`/`toString`.
-Писать делегирующий класс на 50 методов ради одной переопределённой семантики — плохая сделка, и
-все production-пулы делают ровно то же самое.
-
-Истечение ленивое: проверяется при ближайшем borrow/return, а не фоновым таймером. Пул, которым никто
-не пользуется, не должен иметь собственного потока, который нужно корректно останавливать.
-
-Для тестируемости `PoolConfig` принимает `Clock`, поэтому `idleTimeout` и `maxLifetime` проверяются без
-`sleep`, а дедлайн соединений не зависит от системного времени.
-
----
-
-## Что не поддерживается и почему
-
-| Не поддерживается | Причина |
+| | Почему |
 |---|---|
-| `@OneToMany`, `@ManyToMany` | Коллекция требует отслеживания изменений её элементов — это самая «невидимая» магия в ORM. Здесь её нет: аннотация `OneToMany` приводит к `UnsupportedOperationException` на этапе парсинга метаданных, то есть проблема обнаруживается при старте, а не в проде. |
-| Наследование сущностей | Каждая стратегия (single table, joined, table per class) добавляет слой к SQL-генератору и к dirty checking. Одиннадцать строк кода «поддержки» здесь означали бы три неразобранных подсистемы. |
-| Кэш второго уровня | Требует инвалидации между процессами, то есть распределённой проблемы. Для учебного проекта это первое, что можно убрать и не потерять понимание основ. |
-| Criteria API с compile-time проверкой | Требует статического анализа вызовов или генерации кода. Строковый builder проверяется в рантайме — проще и честнее. |
-| MySQL / Oracle | Требует второго `Dialect`. Он есть как интерфейс с пятью методами, но непроверенная реализация — мёртвый код. |
-| Каскады и `orphanRemoval` | Каскадное удаление — политика, а не механизм; она должна быть в доменной модели, а не в ORM. |
-| `@Embedded`, `@ElementCollection`, наследование встраиваемых типов | Каждый добавляет свой путь маппинга и свои правила dirty checking. |
-| Composite primary keys | Требовали бы составного ключа в `PersistenceContext` и в `Change`. |
-| Авто-коммит для записей | `persist`/`merge`/`remove`/`flush` требуют транзакции, иначе `TransactionRequiredException`. Полузаписанный агрегат ищется дольше, чем падение с внятным сообщением. |
+| `@OneToMany`, `@ManyToMany` | Коллекция требует отслеживания изменений её элементов — самая «невидимая» магия в ORM. Здесь аннотация приводит к `UnsupportedOperationException` при разборе метаданных, то есть проблема видна на старте. |
+| Наследование сущностей | Каждая стратегия добавляет слой к SQL-генератору и к dirty checking. Одиннадцать строк «поддержки» означали бы три неразобранных подсистемы. |
+| Кэш второго уровня | Требует инвалидации между процессами, то есть распределённой проблемы. Первое, что можно убрать и не потерять понимание основ. |
+| MySQL / Oracle | Второй `Dialect`. Он есть как интерфейс из пяти методов, но непроверенная реализация — мёртвый код. |
+| Каскады, `@Embedded`, составные ключи | Каждый добавляет свой путь маппинга и свои правила dirty checking. Каскадное удаление — политика, а не механизм, и должна жить в доменной модели. |
 
-Осознанное отклонение от исходного ТЗ: `Session.find` возвращает `Optional<T>`, а не `T`. Публичный API
-без `null` — сознательное решение; для случая «обязательно должен существовать» есть `findOrThrow`,
-который бросает `EntityNotFoundException`.
-
----
+Осознанное отклонение от исходного ТЗ: `Session.find` возвращает `Optional<T>`, а не `T` — публичный API
+без `null`. Для случая «обязательно должен существовать» есть `findOrThrow`.
 
 ## Бенчмарки
 
-`FindByIdBenchmark` сравнивает три варианта. Во всех трёх на каждой операции открывается и закрывается
-unit of work, все работают через один и тот же пул, SQL и проекция одинаковы. Разница — только
-накладные расходы ORM.
+Три варианта, во всех трёх на каждой операции открывается и закрывается unit of work, пул и SQL
+одинаковы. Разница — только накладные расходы ORM.
 
-```bash
-mvn -q test-compile
-mvn -o dependency:build-classpath -Dmdep.outputFile=target/cp.txt -Dmdep.includeScope=test
-java -cp "target/classes:target/test-classes:$(cat target/cp.txt)" org.openjdk.jmh.Main \
-    io.microorm.benchmark.FindByIdBenchmark -bm avgt -wi 5 -i 5 -w 2s -r 3s -f 2 -tu us
-```
-
-| Сценарий | Score, мкс/оп | Error | Отн. к JDBC | SQL за операцию |
+| Сценарий | мкс/оп | Error | к JDBC | SQL за операцию |
 |---|---:|---:|---:|---:|
 | `plainJdbcFindById` — тот же SQL через `PreparedStatement` | **202,5** | ± 42,3 | 1,00× | 1 |
 | `microOrmFindById` — полный путь ORM | **257,3** | ± 56,1 | 1,27× | 1 |
 | `microOrmFindByIdTwice` — второй `find` из кэша первого уровня | **238,3** | ± 65,1 | 1,18× | 1 |
 
-Условия: PostgreSQL 16.2 на той же машине (локальный сервер, без контейнера), JMH 1.37, 2 форка,
-5 итераций по 2 с прогрева и 5 по 3 с замера, `AverageTime`.
+```bash
+mvn -q test-compile dependency:build-classpath -Dmdep.outputFile=target/cp.txt -Dmdep.includeScope=test
+java -cp "target/classes:target/test-classes:$(cat target/cp.txt)" org.openjdk.jmh.Main \
+    io.microorm.benchmark.FindByIdBenchmark -bm avgt -wi 5 -i 5 -w 2s -r 3s -f 2 -tu us
+```
 
-Как это читать:
+PostgreSQL 16.2, JMH 1.37, 2 форка. ORM дороже JDBC на ~27% — это цена за сессию, кэш, маппинг
+8 колонок рефлексией и снимок для dirty checking. Второй `find` той же строки почти ничего не стоит
+(257 → 238 мкс): SQL не выполняется вовсе. Абсолютные значения высокие потому, что база и клиент на
+одной машине.
 
-- **ORM дороже JDBC на ~27%** — и это цена за то, что он делает: создание сессии и persistence context,
-  поиск метаданных, маппинг 8 колонок рефлексией и снимок значений для dirty checking.
-- **Второй `find` той же строки почти ничего не стоит** (~19 мкс, разница 257 → 238): это чистая экономия
-  кэша первого уровня, SQL не выполняется вовсе.
-- Абсолютные значения высокие (~200 мкс), потому что база и клиент на одной машине и каждый `SELECT`
-  идёт через диск. Для сравнения ORM с ORM это неважно, для сравнения «быстро/медленно» — важно.
+Hibernate в таблице нет: его нет в classpath, а мерить то, чего нет, — значит выдумывать числа.
 
-Hibernate в таблице нет намеренно: это не зависимость проекта, а измерять то, чего нет в classpath,
-значит выдумывать числа. Сравнение «MicroORM против чистого JDBC» — единственное, которое здесь
-воспроизводимо одной командой.
-
-## Как запустить тесты
+## Тесты
 
 ```bash
 mvn clean verify
 ```
 
-`verify` выполняет:
+Юнит-тесты (294) проверяют SQL-генератор, разбор метаданных, dirty checking, пул, транзакции, query
+builder и прокси — без базы, на скриптованном JDBC. Интеграционные (57) поднимают Testcontainers с
+`postgres:16-alpine` и проверяют то, что фейк принципиально не может: constraint violations,
+конкуренцию двух потоков, savepoint через драйвер, `RETURNING`, обнаружение sequence через
+`DatabaseMetaData`, поведение после убийства бэкенда.
 
-1. **юнит-тесты** — SQL-генератор, парсинг метаданных, dirty checking, пул соединений, транзакции,
-   query builder, ленивые прокси, пример из README (283 теста, без базы);
-2. **интеграционные тесты** — Testcontainers поднимает `postgres:16-alpine`, применяет
-   `src/test/resources/docker/init.sql`, после чего выполняются 8 наборов (`*IT`);
-3. **jacoco** — сбор покрытия и проверка порога 80% по строкам.
-
-Интеграционные тесты требуют PostgreSQL. По умолчанию его поднимает Testcontainers, но если демона
-нет, тесты **пропускаются**, а не падают: используется `Assumptions.assumeTrue`, и сборка остаётся
-зелёной.
-
-Чтобы прогнать их без Docker, укажите любой доступный PostgreSQL:
+Нужен PostgreSQL. По умолчанию его поднимает Testcontainers; если демона нет, тесты скипаются, а
+сборка остаётся зелёной. Чтобы прогнать их без Docker:
 
 ```bash
-mvn clean verify \
-  -Dmicroorm.jdbcUrl=jdbc:postgresql://127.0.0.1:5432/microorm \
+mvn clean verify -Dmicroorm.jdbcUrl=jdbc:postgresql://127.0.0.1:5432/microorm \
   -Dmicroorm.jdbcUser=postgres -Dmicroorm.jdbcPassword=postgres
 ```
 
-Схема применяется из того же `docker/init.sql` в обоих режимах. Именно так все 57 интеграционных
-тестов были прогнаны при разработке — на сервере PostgreSQL 16.2, распакованном из бинарников.
-
-Что проверяют интеграционные тесты:
-
-| Набор | Сценарии |
-|---|---|
-| `CrudIT` | persist → find → update → remove, first-level cache, dirty UPDATE, `merge`, нарушения ограничений |
-| `TransactionIT` | commit, rollback, откат незавершённой транзакции при закрытии сессии, savepoint, REPEATABLE READ |
-| `OptimisticLockingIT` | два потока на одной строке — ровно один победил, версия инкрементируется, конфликт при удалении |
-| `LazyLoadingIT` | `getReference` не ходит в БД, загрузка ровно один раз, `LazyInitializationException` после `close()` |
-| `QueryIT` | все операторы, пагинация, `'; DROP TABLE users; --` как значение |
-| `ConnectionPoolIT` | возврат соединения, насыщение пула, замена протухших и убитых соединений, метрики |
-| `SchemaExporterIT` | сгенерированный DDL применяется к чистой схеме PostgreSQL |
-| `IdGenerationIT` | `AUTO` → identity или sequence в зависимости от схемы, `SEQUENCE`, уникальность id |
-
-Покрытие: **93% строк, 84% ветвей** по модулю — 293 юнит-теста плюс 57 интеграционных.
-
----
+Схема применяется из того же `docker/init.sql` в обоих режимах.
 
 ## Что я узнал, написав свой ORM
 
-**Рефлексия — это не страшно, если результат кэшировать.** `Field.get` медленный, но парсинг метаданных
-происходит один раз на класс. Всё, что читается в цикле, заранее превращается в `record` с готовым
-`Field` — и горячий путь не платит за разбор аннотаций.
+**Юнит-тесты на фейке не заменяют настоящую баду.** Пул возвращал в idle свежую копию соединения, но
+оставлял прежнюю в множестве учёта: проверка членства на втором `release` падала, и пул утекал до
+полного насыщения. Юнит-тесты этого не видели — у них был замороженный `Clock`, а две копии с
+одинаковым временем равны как records. Из того же прогона: `Long`-поле над `INTEGER`-колонкой, которое
+драйвер конвертировать отказывается, — не экзотика, а обычное расхождение схемы и entity.
+Фейк проверяет логику, база проверяет контракты с драйвером.
 
-**SQL-текст и значения должны разделяться в типах, а не только в соглашениях.** `SqlStatement` несёт
-`List<Bind>`, а `Bind` знает тип значения. Из-за этого «случайно склеить значение в строку» невозможно
-на уровне компиляции, а не по договорённости. Идентификаторы склеиваются — их нельзя параметризовать,
-поэтому их единственная защита — whitelist из метаданных.
+**Рефлексия не страшна, если результат кэшировать.** `Field.get` медленный, но разбор метаданных
+происходит один раз на класс: всё, что читается в цикле, заранее превращается в `record` с готовым
+`Field`.
 
-**Идентичность объектов — это то, что отличает ORM от обёртки над JDBC.** Кэш первого уровня стоит
-несколько строк кода, но без него `session.find()` после изменения объекта в другом месте вернул бы
-новый экземпляр, и оптимистичная блокировка начала бы срабатывать ложно.
+**Идентичность объектов — то, что отличает ORM от обёртки над JDBC.** Кэш первого уровня стоит
+несколько строк, но без него `find` после изменения объекта в другом месте вернул бы новый экземпляр,
+и оптимистичная блокировка начала бы срабатывать ложно.
 
-**Оптимистичная блокировка бесплатна только в двух случаях.** Её реальная цена — колонка `version` в
-каждой изменяемой таблице и `UPDATE` с двумя дополнительными условиями. Всё остальное (снимок версии,
-`WHERE version = ?`, проверка числа затронутых строк) — двадцать строк кода.
+**Ленивая загрузка — не «null вместо объекта».** Прокси должен проходить `instanceof`, инициализироваться
+один раз и честно падать после закрытия сессии. И он должен делегировать, а не копировать: копия —
+это второй источник правды, и запись через ссылку в неё попадёт, а в базу — нет.
 
-**Lazy loading — это не «NULL вместо объекта».** Прокси должен выглядеть как объект (`instanceof`
-должен проходить), переживать инициализацию один раз и честно падать после закрытия сессии. ByteBuddy
-делает это лучше, чем можно сделать вручную: `@SuperCall` решает задачу вызова `super`-реализации,
-которую вручную пришлось бы решать через копирование состояния в прокси (так делает Hibernate в
-случае некоторых конфигураций).
+**Пул — это контракт о конкурентном доступе, а не коллекция.** `ReentrantLock` + `Condition` вместо
+`wait/notify` — не стилистика: пул, создающий соединение без резервирования слота под лимит, в
+нагрузке превысит `maxSize` мгновенно.
 
-**Savepoint — это и есть «вложенная транзакция».** Никакой магии: JDBC не умеет ничего другого. Важно
-правило — откат вложенной транзакции откатывает только внутреннюю работу, а внешний транзакционный
-контекст остаётся валидным.
-
-**Connection pool — это контракт о конкурентном доступе, а не просто коллекция.** `ReentrantLock` + `Condition` вместо
-`wait/notify` — не стилистический выбор, а отсутствие гонок при пробуждении. Пул, который создаёт
-соединение, не забронировав слот под лимит, в нагрузке превысит `maxSize` мгновенно.
-
-**Юнит-тесты на фейке не заменяют настоящую базу.** Пул возвращал в idle свежую копию соединения,
-но оставлял прежнюю копию в множестве учёта; проверка членства на втором `release` падала, и пул
-утекал до полного насыщения. Юнит-тесты этого не видели: у них был замороженный `Clock`, а две копии
-с одинаковым временем равны как records. На живой базе ошибка проявилась сразу — через пять тестов.
-Второй урок из того же прогона: `Long`-поле над `INTEGER`-колонкой, которое драйвер конвертировать
-отказывается, — не экзотика, а самая обычная расхождение схемы и entity. Общий вывод: фейк проверяет
-логику, база проверяет контракты с драйвером, и пропускать второе нельзя.
-
-**«Грязные данные» в ORM — это не то, что PostgreSQL называет dirty read, а незаписанные изменения.** Авто-`flush` перед каждым
-чтением внутри транзакции — это то, что делает `find` после `setName()` предсказуемым. Hibernate
-называет это `FlushMode.AUTO`, и это поведение стоит дешевле, чем альтернатива: неожиданный
-`UPDATE` в конце транзакции.
-
----
+**«Грязные данные» в ORM — не то, что PostgreSQL называет dirty read.** Авто-`flush` перед чтением
+внутри транзакции стоит дешевле, чем альтернатива: неожиданный `UPDATE` в конце транзакции.
 
 ## Лицензия
 

@@ -29,6 +29,9 @@ import javax.sql.DataSource;
  * <p>It is deliberately dumb: a test registers the rows a query must return and then asserts on the
  * SQL that was executed. Anything the ORM does not register comes back as an empty result, so an
  * unexpected extra query fails loudly instead of silently returning nulls.
+ *
+ * <p>The counterpart is {@link FakeConnections}, which spies on one connection instead of scripting a
+ * database; between them they cover everything the session does without a real driver.
  */
 public final class FakeJdbc {
 
@@ -56,7 +59,6 @@ public final class FakeJdbc {
      * @param values one row of values, positionally matching the projection
      * @return this database
      */
-    @SafeVarargs
     public final FakeJdbc onQuery(String sql, Object... values) {
         results.put(sql, new FakeResultSet(columnsOf(sql), List.<Object[]>of(values.clone())));
         return this;

@@ -8,7 +8,6 @@ import io.microorm.query.Query;
 import io.microorm.query.QueryValidator;
 import io.microorm.query.SortDirection;
 import io.microorm.query.WhereClause;
-import io.microorm.sql.Bind;
 import io.microorm.sql.ParameterBinder;
 import io.microorm.sql.SelectStatement;
 import java.sql.PreparedStatement;
@@ -140,9 +139,24 @@ final class QueryImpl<T> implements Query<T> {
 
     @Override
     public List<T> list() {
+        return execute(null);
+    }
+
+    /**
+     * @param requested limit of this call, {@code null} for "whatever the query is configured with"
+     * @return the stricter of the two limits, or {@code null} when neither is set
+     */
+    private Integer effectiveLimit(Integer requested) {
+        if (limit == null) {
+            return requested;
+        }
+        return requested == null ? limit : Math.min(requested, limit);
+    }
+
+    private List<T> execute(Integer requested) {
         session.autoFlush();
         List<T> result = new ArrayList<>();
-        for (Object entity : session.rowLoader().load(statement())) {
+        for (Object entity : session.rowLoader().load(statement(requested))) {
             result.add(type.cast(entity));
         }
         return result;
@@ -150,8 +164,9 @@ final class QueryImpl<T> implements Query<T> {
 
     @Override
     public Optional<T> first() {
-        limit(1);
-        return list().stream().findFirst();
+        // NOTE: the limit is applied to this statement only; mutating the query here would silently
+        // change a later list() call on the same instance.
+        return execute(1).stream().findFirst();
     }
 
     @Override
@@ -218,9 +233,15 @@ final class QueryImpl<T> implements Query<T> {
         }
     }
 
-    private SelectStatement statement() {
-        return new SelectStatement("SELECT " + entity.selectColumns() + " FROM " + entity.tableName()
-                + clauseSuffix(), where.parameters(), entity);
+    private SelectStatement statement(Integer requested) {
+        StringBuilder sql = new StringBuilder("SELECT " + entity.selectColumns()
+                + " FROM " + entity.tableName());
+        append(sql, where.clause());
+        if (!orderBy.isEmpty()) {
+            append(sql, "ORDER BY " + String.join(", ", orderBy));
+        }
+        append(sql, session.dialect().pagination(effectiveLimit(requested), offset));
+        return new SelectStatement(sql.toString(), where.parameters(), entity);
     }
 
     /**
@@ -229,13 +250,10 @@ final class QueryImpl<T> implements Query<T> {
      * @return the clause, starting with a space when it is not empty
      */
     private String clauseSuffix() {
-        StringBuilder clause = new StringBuilder();
-        append(clause, where.clause());
-        if (!orderBy.isEmpty()) {
-            append(clause, "ORDER BY " + String.join(", ", orderBy));
-        }
-        append(clause, session.dialect().pagination(limit, offset));
-        return clause.toString();
+        StringBuilder sql = new StringBuilder();
+        append(sql, where.clause());
+        append(sql, session.dialect().pagination(limit, offset));
+        return sql.toString();
     }
 
     private String limitSuffix(int rowLimit) {

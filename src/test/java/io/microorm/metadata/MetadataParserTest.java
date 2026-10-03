@@ -13,6 +13,8 @@ import java.time.LocalDateTime;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import io.microorm.example.User;
+import io.microorm.example.Order;
 
 class MetadataParserTest {
 
@@ -21,9 +23,9 @@ class MetadataParserTest {
     @Test
     @DisplayName("maps annotations of a typical entity to table, columns and flags")
     void mapsTypicalEntity() {
-        EntityMetadata metadata = parser.parse(TestEntities.User.class);
+        EntityMetadata metadata = parser.parse(User.class);
 
-        assertThat(metadata.type()).isEqualTo(TestEntities.User.class);
+        assertThat(metadata.type()).isEqualTo(User.class);
         assertThat(metadata.tableName()).isEqualTo("users");
         assertThat(metadata.identifier().column()).isEqualTo("id");
         assertThat(metadata.identifier().generation()).contains(GenerationType.AUTO);
@@ -38,7 +40,7 @@ class MetadataParserTest {
     @Test
     @DisplayName("columnDefinition wins over the derived SQL type")
     void resolvesColumnDefinitions() {
-        EntityMetadata metadata = parser.parse(TestEntities.User.class);
+        EntityMetadata metadata = parser.parse(User.class);
 
         assertThat(metadata.fieldByColumn("bio").orElseThrow().sqlType()).isEqualTo("TEXT");
         assertThat(metadata.fieldByColumn("name").orElseThrow().sqlType()).isEqualTo("VARCHAR(255)");
@@ -49,7 +51,7 @@ class MetadataParserTest {
     @Test
     @DisplayName("columns excluded from INSERT and UPDATE are filtered out of the statement lists")
     void splitsInsertableAndUpdatableFields() {
-        EntityMetadata metadata = parser.parse(TestEntities.User.class);
+        EntityMetadata metadata = parser.parse(User.class);
 
         assertThat(metadata.insertableFields()).map(FieldMetadata::column)
                 .containsExactly("email", "name", "age", "active", "bio", "version");
@@ -61,13 +63,13 @@ class MetadataParserTest {
     @Test
     @DisplayName("associations are mapped to a foreign key column and keep their target type")
     void mapsAssociation() {
-        EntityMetadata metadata = parser.parse(TestEntities.Order.class);
+        EntityMetadata metadata = parser.parse(Order.class);
 
         FieldMetadata user = metadata.fieldByColumn("user_id").orElseThrow();
         assertThat(user.isAssociation()).isTrue();
         AssociationMetadata association = user.association().orElseThrow();
         assertThat(association.type()).isEqualTo(AssociationType.MANY_TO_ONE);
-        assertThat(association.targetType()).isEqualTo(TestEntities.User.class);
+        assertThat(association.targetType()).isEqualTo(User.class);
         assertThat(association.lazy()).isTrue();
         assertThat(association.joinColumn()).isEqualTo("user_id");
         assertThat(metadata.basicFields()).map(FieldMetadata::column)
@@ -88,8 +90,8 @@ class MetadataParserTest {
     @Test
     @DisplayName("field values can be read and written through metadata")
     void readsAndWritesFields() {
-        EntityMetadata metadata = parser.parse(TestEntities.Order.class);
-        TestEntities.Order order = new TestEntities.Order("first", new BigDecimal("10.50"));
+        EntityMetadata metadata = parser.parse(Order.class);
+        Order order = new Order("first", new BigDecimal("10.50"));
 
         metadata.fieldByColumn("description").orElseThrow().setValue(order, "second");
         metadata.fieldByColumn("amount").orElseThrow().setValue(order, new BigDecimal("1.00"));
@@ -103,9 +105,9 @@ class MetadataParserTest {
     @Test
     @DisplayName("newInstance uses the no-argument constructor")
     void createsInstances() {
-        EntityMetadata metadata = parser.parse(TestEntities.User.class);
+        EntityMetadata metadata = parser.parse(User.class);
 
-        assertThat(metadata.newInstance()).isInstanceOf(TestEntities.User.class);
+        assertThat(metadata.newInstance()).isInstanceOf(User.class);
     }
 
     @Test
@@ -122,6 +124,15 @@ class MetadataParserTest {
         assertThatThrownBy(() -> parser.parse(TestEntities.TwoIds.class))
                 .isInstanceOf(MappingException.class)
                 .hasMessageContaining("@Id more than once");
+    }
+
+    @Test
+    @DisplayName("a java transient field is not mapped")
+    void skipsTransientKeywordFields() {
+        EntityMetadata metadata = parser.parse(User.class);
+
+        assertThat(metadata.selectColumns()).doesNotContain("password");
+        assertThat(metadata.fieldByColumn("password")).isEmpty();
     }
 
     @Test
@@ -202,8 +213,8 @@ class MetadataParserTest {
     @DisplayName("counts real parses so that caching can be verified")
     void countsParses() {
         assertThat(parser.parsedEntityCount()).isZero();
-        parser.parse(TestEntities.User.class);
-        parser.parse(TestEntities.User.class);
+        parser.parse(User.class);
+        parser.parse(User.class);
 
         assertThat(parser.parsedEntityCount()).isEqualTo(2);
     }
@@ -211,7 +222,7 @@ class MetadataParserTest {
     @Test
     @DisplayName("generate strategy is exposed as an Optional")
     void exposesGenerationAsOptional() {
-        EntityMetadata metadata = parser.parse(TestEntities.Order.class);
+        EntityMetadata metadata = parser.parse(Order.class);
 
         assertThat(metadata.identifier().generation()).isEqualTo(Optional.of(GenerationType.SEQUENCE));
         assertThat(parser.parse(TestEntities.AuditEvent.class).identifier().generation()).isEmpty();
