@@ -4,6 +4,7 @@ import io.microorm.exception.EntityNotFoundException;
 import io.microorm.exception.PersistenceException;
 import io.microorm.id.IdGenerators;
 import io.microorm.metadata.EntityMetadata;
+import io.microorm.sql.Dialect;
 import io.microorm.transaction.IsolationLevel;
 import io.microorm.transaction.Transaction;
 import io.microorm.transaction.TransactionManager;
@@ -216,6 +217,12 @@ public final class SessionImpl implements Session {
     }
 
     @Override
+    public <T> io.microorm.query.Query<T> createQuery(Class<T> type) {
+        checkOpen();
+        return new QueryImpl<>(this, type);
+    }
+
+    @Override
     public SessionStatistics statistics() {
         return counters.snapshot();
     }
@@ -240,6 +247,26 @@ public final class SessionImpl implements Session {
     /** @return the unit of work of this session, used by the query builder to flush first */
     UnitOfWork unitOfWork() {
         return unitOfWork;
+    }
+
+    /** @return the row loader of this session, so a query returns managed instances */
+    RowLoader rowLoader() {
+        return rowLoader;
+    }
+
+    /** @return the metadata registry shared with the factory */
+    io.microorm.metadata.MetadataRegistry metadata() {
+        return factory.metadata();
+    }
+
+    /** @return the dialect used to render LIMIT and OFFSET */
+    Dialect dialect() {
+        return factory.sqlGenerator().dialect();
+    }
+
+    /** @return the JDBC connection of this session */
+    java.sql.Connection connection() {
+        return transactions.connection();
     }
 
     /**
@@ -272,7 +299,7 @@ public final class SessionImpl implements Session {
      * <p>Reading inside a transaction must not observe values that were already changed in memory but
      * not written yet; this is the behaviour Hibernate calls {@code FlushMode.AUTO}.
      */
-    private void autoFlush() {
+    void autoFlush() {
         if (transactions.hasActiveTransaction() && unitOfWork.hasPendingWork()) {
             flush();
         }

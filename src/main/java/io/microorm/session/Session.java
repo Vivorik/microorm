@@ -139,6 +139,15 @@ public interface Session extends AutoCloseable {
     /** @return counters describing how much work this session did, useful in tests and benchmarks */
     SessionStatistics statistics();
 
+    /**
+     * Creates a query builder for an entity.
+     *
+     * @param type entity class
+     * @param <T>  entity type
+     * @return a new query that reads through this session
+     */
+    <T> io.microorm.query.Query<T> createQuery(Class<T> type);
+
     /** @return {@code true} while a transaction is active */
     boolean hasActiveTransaction();
 

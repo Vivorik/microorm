@@ -63,6 +63,22 @@ public final class MetadataRegistry {
     }
 
     /**
+     * Resolves the Java type actually stored in a column.
+     *
+     * <p>For a scalar field that is the field type; for an association it is the type of the referenced
+     * identifier, because that is what the foreign key column holds. Every piece of code that binds a
+     * value needs this, and getting it wrong means binding a {@code Long} as if it were an entity.
+     *
+     * @param field mapped field
+     * @return basic type of the column value
+     */
+    public Class<?> columnJavaType(FieldMetadata field) {
+        return field.association()
+                .<Class<?>>map(association -> metadataFor(association.targetType()).identifier().javaType())
+                .orElse(field.javaType());
+    }
+
+    /**
      * @param type entity class
      * @return {@code true} when metadata has already been parsed for the class
      */

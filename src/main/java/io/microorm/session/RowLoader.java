@@ -177,8 +177,7 @@ final class RowLoader {
 
         @Override
         public Class<?> columnTypeOf(FieldMetadata field) {
-            return registry.metadataFor(field.association().orElseThrow().targetType())
-                    .identifier().javaType();
+            return registry.columnJavaType(field);
         }
     }
 }

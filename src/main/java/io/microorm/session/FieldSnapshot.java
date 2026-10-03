@@ -88,8 +88,7 @@ final class FieldSnapshot {
      * @return SQL type of the foreign key column
      */
     Class<?> columnTypeOf(FieldMetadata field) {
-        return registry.metadataFor(field.association().orElseThrow().targetType())
-                .identifier().javaType();
+        return registry.columnJavaType(field);
     }
 
     /**

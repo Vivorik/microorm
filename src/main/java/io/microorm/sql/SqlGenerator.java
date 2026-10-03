@@ -30,6 +30,11 @@ public final class SqlGenerator {
         this.dialect = dialect;
     }
 
+    /** @return the dialect this generator renders SQL for */
+    public Dialect dialect() {
+        return dialect;
+    }
+
     /**
      * Builds an INSERT for a new entity.
      *

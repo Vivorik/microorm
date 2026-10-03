@@ -36,6 +36,9 @@ public final class FakeJdbc {
     private static final Pattern RETURNING = Pattern.compile("RETURNING (.+)$", Pattern.DOTALL);
 
     private final Map<String, FakeResultSet> results = new LinkedHashMap<>();
+    private final Map<String, List<FakeResultSet>> sequenceBySql = new LinkedHashMap<>();
+    private final Map<String, java.util.concurrent.atomic.AtomicInteger> sequencesBySql =
+            new LinkedHashMap<>();
     private final Map<String, Integer> updateCounts = new LinkedHashMap<>();
     private final List<String> sequences = new ArrayList<>();
     private final List<ExecutedStatement> statements = new ArrayList<>();
@@ -68,6 +71,29 @@ public final class FakeJdbc {
      */
     public FakeJdbc onQueries(String sql, List<Object[]> rows) {
         results.put(sql, new FakeResultSet(columnsOf(sql), List.copyOf(rows)));
+        return this;
+    }
+
+    /**
+     * Registers several responses for the same statement, one per execution.
+     *
+     * <p>Needed when two executions of an identical statement must return different data - for example
+     * when a test checks that a query is executed twice with the same SQL but different parameters. The
+     * last response is repeated once the sequence is exhausted.
+     *
+     * @param sql       exact SQL text
+     * @param responses one or more rows; each element is a response, each row is a value list
+     * @return this database
+     */
+    @SafeVarargs
+    public final FakeJdbc onQuerySequence(String sql, List<Object[]>... responses) {
+        List<FakeResultSet> sequence = new java.util.ArrayList<>();
+        for (List<Object[]> response : responses) {
+            sequence.add(new FakeResultSet(columnsOf(sql), List.copyOf(response)));
+        }
+        results.put(sql, null);
+        sequencesBySql.put(sql, new java.util.concurrent.atomic.AtomicInteger());
+        sequenceBySql.put(sql, sequence);
         return this;
     }
 
@@ -179,6 +205,11 @@ public final class FakeJdbc {
     }
 
     private FakeResultSet resultFor(String sql) {
+        List<FakeResultSet> sequence = sequenceBySql.get(sql);
+        if (sequence != null) {
+            int index = sequencesBySql.get(sql).getAndIncrement();
+            return sequence.get(Math.min(index, sequence.size() - 1));
+        }
         FakeResultSet result = results.get(sql);
         return result != null ? result : new FakeResultSet(columnsOf(sql), List.of());
     }
