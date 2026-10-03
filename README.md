@@ -10,7 +10,7 @@
 `java.sql`, стандартная библиотека, SLF4J и ByteBuddy для ленивых прокси.
 
 ```
-Java 21 · Maven · PostgreSQL · 81 файл / ~6400 строк main · 282 юнит-теста + 8 IT-наборов
+Java 21 · Maven · PostgreSQL · 81 файл / ~6350 строк main · 282 юнит-теста + 8 IT-наборов
 ```
 
 ---
