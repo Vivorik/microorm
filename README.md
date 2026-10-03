@@ -1,8 +1,5 @@
 # MicroORM
 
-[![Java 21](https://img.shields.io/badge/java-21-%23ED8B00?logo=openjdk&logoColor=white)](https://openjdk.org/)
-[![build](https://github.com/Vivorik/microorm/actions/workflows/build.yml/badge.svg)](https://github.com/Vivorik/microorm/actions/workflows/build.yml)
-
 ORM для PostgreSQL на голом JDBC: 81 класс, 6400 строк, 351 тест, покрытие 93% строк. Зависимости —
 `byte-buddy` для ленивых прокси и `slf4j-api`. Java 21, Maven, PostgreSQL 16, JUnit 5 + Testcontainers.
 
