@@ -5,7 +5,10 @@ import java.lang.reflect.Proxy;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.SQLException;
+import java.sql.Savepoint;
 import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -27,9 +30,12 @@ public final class FakeConnections {
         private final AtomicInteger closeCount = new AtomicInteger();
         private final AtomicInteger validationCount = new AtomicInteger();
         private final AtomicInteger autoCommitResets = new AtomicInteger();
+        private final List<String> events = java.util.Collections.synchronizedList(new ArrayList<>());
         private volatile boolean broken;
         private volatile boolean closed;
         private volatile boolean serverSideClosed;
+        private volatile int isolationLevel = Connection.TRANSACTION_READ_COMMITTED;
+        private volatile boolean autoCommit = true;
 
         /** @return how often {@link Connection#close()} was called on this connection */
         public int closeCount() {
@@ -44,6 +50,29 @@ public final class FakeConnections {
         /** @return how often the pool reset auto-commit, i.e. how often the connection was reused */
         public int autoCommitResets() {
             return autoCommitResets.get();
+        }
+
+        /**
+         * @return ordered log of the transaction relevant JDBC calls, used to assert what the pool
+         *         and the transaction manager actually did
+         */
+        public List<String> events() {
+            return List.copyOf(events);
+        }
+
+        /** @return isolation level last requested through {@code setTransactionIsolation} */
+        public int isolationLevel() {
+            return isolationLevel;
+        }
+
+        /** @return whether auto-commit was switched off */
+        public boolean autoCommit() {
+            return autoCommit;
+        }
+
+        /** Simulates a driver that refuses the requested isolation level. */
+        public void rejectIsolationLevel() {
+            this.broken = true;
         }
 
         /** Simulates a connection whose server side went away. */
@@ -120,9 +149,44 @@ public final class FakeConnections {
                 case "isClosed" -> state.isClosed();
                 case "setAutoCommit" -> {
                     state.autoCommitResets.incrementAndGet();
+                    state.autoCommit = (boolean) args[0];
+                    state.events.add("setAutoCommit(" + args[0] + ")");
                     yield null;
                 }
-                case "getAutoCommit" -> true;
+                case "getAutoCommit" -> state.autoCommit;
+                case "commit" -> {
+                    state.events.add("commit");
+                    yield null;
+                }
+                case "rollback" -> {
+                    if (args == null) {
+                        state.events.add("rollback");
+                    } else {
+                        state.events.add("rollback(" + ((Savepoint) args[0]).getSavepointName() + ")");
+                    }
+                    yield null;
+                }
+                case "setSavepoint" -> {
+                    String name = "unnamed";
+                    if (args != null && args.length > 0) {
+                        name = (String) args[0];
+                    }
+                    state.events.add("setSavepoint(" + name + ")");
+                    yield savepoint(name);
+                }
+                case "releaseSavepoint" -> {
+                    state.events.add("releaseSavepoint(" + ((Savepoint) args[0]).getSavepointName() + ")");
+                    yield null;
+                }
+                case "setTransactionIsolation" -> {
+                    if (state.broken) {
+                        throw new SQLException("isolation level is not supported");
+                    }
+                    state.isolationLevel = (int) args[0];
+                    state.events.add("setTransactionIsolation(" + args[0] + ")");
+                    yield null;
+                }
+                case "getTransactionIsolation" -> state.isolationLevel;
                 case "createStatement" -> statement(state);
                 case "getMetaData" -> metaData();
                 case "toString" -> "FakeConnection";
@@ -131,6 +195,18 @@ public final class FakeConnections {
                 default -> throw new UnsupportedOperationException("Connection." + method.getName()
                         + " is not part of the pool contract");
             };
+        }
+
+        private Savepoint savepoint(String name) {
+            InvocationHandler handler = (proxy, method, args) -> switch (method.getName()) {
+                case "getSavepointName" -> name;
+                case "toString" -> "FakeSavepoint[" + name + "]";
+                case "hashCode" -> System.identityHashCode(proxy);
+                case "equals" -> proxy == args[0];
+                default -> throw new UnsupportedOperationException("Savepoint." + method.getName());
+            };
+            return (Savepoint) Proxy.newProxyInstance(
+                    FakeConnections.class.getClassLoader(), new Class<?>[]{Savepoint.class}, handler);
         }
 
         private Statement statement(State state) {
