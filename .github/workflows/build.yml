@@ -1,0 +1,56 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    # Integration tests run Testcontainers, which needs a working Docker daemon.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+
+      - name: Verify (unit tests, integration tests, coverage gate)
+        run: mvn --batch-mode clean verify
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report
+          path: target/site/jacoco/
+          retention-days: 7
+
+  benchmarks:
+    # Nightly: benchmarks are slow and the numbers are informational.
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'push'
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+
+      - name: Run the find-by-id benchmark
+        run: |
+          mvn --batch-mode -q test-compile exec:java \
+            -Dexec.classpathScope=test \
+            -Dexec.mainClass=org.openjdk.jmh.Main \
+            -Dexec.args="io.microorm.benchmark.FindByIdBenchmark -bm avgt -wi 3 -i 5 -f 1 -r 1s"
